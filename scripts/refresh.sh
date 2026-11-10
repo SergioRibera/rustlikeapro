@@ -111,8 +111,11 @@ if [[ -f "${templates}/deny.toml" ]] && cargo deny --version >/dev/null 2>&1; th
   printf 'pub fn probe() {}\n' >"${probe}/src/lib.rs"
   printf '[package]\nname = "deny-probe"\nversion = "0.0.0"\nedition = "2024"\nlicense = "MIT"\npublish = false\n' >"${probe}/Cargo.toml"
   (cd "$probe" && cargo generate-lockfile --quiet 2>/dev/null) || true
+  # Copy instead of passing a config flag: cargo-deny discovers deny.toml next to the
+  # manifest in every version, while the flag's name/placement changed in 0.20.
+  cp "${templates}/deny.toml" "${probe}/deny.toml"
   # `check bans` loads and validates the whole config without fetching the advisory DB.
-  if out="$(cargo deny --manifest-path "${probe}/Cargo.toml" check --config "${templates}/deny.toml" bans 2>&1)"; then
+  if out="$(cd "$probe" && cargo deny check bans 2>&1)"; then
     deny_line="$(line_of "$(cargo deny --version | awk '{ print $2 }')")"
     ok "deny.toml accepted by $(cargo deny --version)"
   else
