@@ -1,0 +1,41 @@
+# justfile template (rustlikeapro). Recipes mirror CI so local == CI.
+# `just --list` shows everything.
+
+msrv := `grep -m1 '^rust-version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/'`
+
+default:
+    @just --list
+
+# Format the code (writes files).
+fmt:
+    cargo fmt --all
+
+# Lints exactly as CI runs them.
+lint:
+    cargo fmt --all --check
+    cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+# Unit + integration tests (nextest if installed) and doc tests (nextest does not run them).
+test:
+    if command -v cargo-nextest >/dev/null; then cargo nextest run --workspace --all-features --locked; else cargo test --workspace --all-features --locked; fi
+    cargo test --workspace --doc --all-features --locked
+
+# Build docs, failing on broken links and warnings.
+doc:
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked
+
+# Licenses, advisories, duplicate versions and sources.
+deny:
+    cargo deny check
+
+# Full local gate (prints PASS/FAIL/SKIP per step).
+check:
+    ./scripts/check.sh
+
+# Everything CI runs, including feature combinations.
+ci: lint test doc deny
+    cargo hack check --workspace --each-feature --no-dev-deps
+
+# Check the declared minimum supported Rust version.
+msrv:
+    rustup run {{msrv}} cargo check --workspace --all-targets --locked

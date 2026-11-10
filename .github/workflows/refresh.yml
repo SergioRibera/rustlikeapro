@@ -1,0 +1,55 @@
+# Keeps the skill current on its own: runs scripts/refresh.sh --write against the
+# latest stable toolchain, commits whatever it could fix mechanically (action tags,
+# version mentions, verified-against, metadata.version) straight to the default
+# branch, and fails only when drift remains that needs a human (renamed/removed
+# lints, deny.toml schema changes).
+name: refresh
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC; Rust releases land on Thursdays every 6 weeks
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the refresh commit
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        # Credentials must persist: the last step pushes with the job's GITHUB_TOKEN.
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: Apply mechanical fixes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # avoids api.github.com rate limits
+        run: ./scripts/refresh.sh --write || true
+
+      - name: Commit and push
+        run: |
+          if git diff --quiet; then
+            echo "nothing to update"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: refresh versions, lints and action tags"
+          git push
+
+      - name: Remaining drift needs a human
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/refresh.sh

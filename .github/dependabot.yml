@@ -1,0 +1,12 @@
+# The skill repo's own workflows (templates/ are kept current by scripts/refresh.sh).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"

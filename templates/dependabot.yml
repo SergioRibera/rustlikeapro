@@ -1,0 +1,29 @@
+# .github/dependabot.yml — keeps Cargo.lock and GitHub Actions current.
+#
+# Pairs with the `major.minor` requirement policy (references/maintenance.md):
+# Cargo.toml declares "1.4"-style requirements, so most updates land as
+# lockfile-only bumps; Dependabot only rewrites Cargo.toml when a release
+# falls outside the declared range (a new 0.x minor or a new major).
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # One PR for all semver-compatible bumps instead of one per crate.
+      compatible:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "build"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"

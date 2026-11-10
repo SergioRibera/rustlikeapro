@@ -1,0 +1,11 @@
+# typos.toml template (rustlikeapro). Run: typos  (fix: typos -w)
+[files]
+extend-exclude = ["*.lock", "*.svg", "*.png", "assets/", "target/", "**/snapshots/"]
+
+[default.extend-identifiers]
+# Identifiers from FFI/foreign APIs that look like typos; note the source.
+# ws_xdg_toplevl = "ws_xdg_toplevl"  # from wayland-protocols
+
+[default.extend-words]
+# Domain words. Keep the list short and commented.
+# ser = "ser"  # serde serializer abbreviation

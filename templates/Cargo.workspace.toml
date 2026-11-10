@@ -1,0 +1,105 @@
+# Workspace root manifest template (rustlikeapro).
+# Copy to the repo root as `Cargo.toml`, rename `myproj`, delete what does not apply.
+# Every member crate adds:
+#
+#   [package]
+#   name = "myproj-core"
+#   version.workspace = true
+#   edition.workspace = true
+#   rust-version.workspace = true
+#   license.workspace = true
+#   repository.workspace = true
+#
+#   [lints]
+#   workspace = true
+
+[workspace]
+# Resolver 3 is MSRV-aware: it prefers dependency versions compatible with `rust-version`.
+# Virtual workspaces do not infer it from the edition, so set it explicitly.
+resolver = "3"
+members = ["crates/*"]
+# Uncomment when binaries live apart from library crates.
+# members = ["crates/*", "bins/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+# Edition 2024 needs >= 1.85. Bump deliberately; CI has an MSRV job that checks this value.
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/OWNER/myproj"
+
+[workspace.dependencies]
+# Versions come from `cargo add` / scripts/add-dep.sh, never typed from memory.
+# Requirement = major.minor: caret range lets `cargo update` pull patches;
+# Cargo.lock pins the exact build (references/maintenance.md).
+# Internal crates: path + version so `cargo publish` works.
+myproj-core = { path = "crates/myproj-core", version = "0.1.0" }
+
+thiserror = "2.0"
+tracing = "0.1"
+# Binaries only; libraries never install a subscriber.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# List tokio features explicitly; never "full" in a library.
+tokio = { version = "1.54", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time"] }
+serde = { version = "1.0", features = ["derive"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"           # FFI crates override with `[lints.rust] unsafe_code = "allow"` + justification.
+unsafe_op_in_unsafe_fn = "deny"  # Each unsafe op inside an `unsafe fn` needs its own block + SAFETY comment.
+unreachable_pub = "warn"         # `pub` items not reachable from the crate root should be `pub(crate)`.
+missing_debug_implementations = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+# Library-only (uncomment for published crates):
+# missing_docs = "warn"
+
+[workspace.lints.clippy]
+# Groups first with lower priority so individual lints below can override them.
+pedantic = { level = "warn", priority = -1 }
+# nursery = { level = "warn", priority = -1 }  # Opt-in per project: has false positives.
+
+# Cherry-picked restriction lints (never enable the whole `restriction` group).
+unwrap_used = "deny"                       # Tests are exempt via clippy.toml `allow-unwrap-in-tests`.
+dbg_macro = "deny"
+todo = "warn"
+unimplemented = "warn"
+undocumented_unsafe_blocks = "deny"        # Every `unsafe {}` needs a `// SAFETY:` comment.
+allow_attributes_without_reason = "deny"   # Forces `#[expect(lint, reason = "...")]`.
+# allow_attributes = "warn"                # Stricter: ban `#[allow]` entirely in favour of `#[expect]`.
+# Library-only (uncomment for published crates or crates that must not print):
+# print_stdout = "deny"
+# print_stderr = "deny"
+
+# Pedantic lints commonly allowed. Each allow needs a reason; delete lines you do not need.
+module_name_repetitions = "allow"   # Conflicts with `foo::FooError`-style naming.
+# missing_errors_doc = "allow"      # Binaries/internal crates only; libraries keep `# Errors` docs.
+# missing_panics_doc = "allow"      # Same as above.
+# cast_possible_truncation = "allow" # Numeric/graphics code where casts are reviewed by hand.
+# cast_precision_loss = "allow"      # Same as above.
+# redundant_pub_crate = "allow"      # Only if nursery is on: conflicts with rustc `unreachable_pub`.
+
+[profile.dev]
+opt-level = 1                       # Debug builds stay debuggable but are not painfully slow.
+
+[profile.dev.package."*"]
+opt-level = 3                       # Dependencies rarely change: optimise them once, keep our code fast to rebuild.
+
+[profile.release]
+lto = "thin"                        # Most of fat LTO's gain at a fraction of link time.
+codegen-units = 1                   # Better optimisation; slower build.
+strip = true
+# panic = "abort"                   # Apps only: smaller binary, no unwinding. Never for libraries or if you rely on catch_unwind.
+# debug = "line-tables-only"        # Readable backtraces from release builds at small size cost.
+# overflow-checks = true            # Keep integer overflow checks in release where correctness beats speed.
+
+# Optional: fast CI profile that still catches release-only bugs.
+# [profile.ci]
+# inherits = "release"
+# lto = false
+# codegen-units = 16
+# incremental = false
+
+# Optional: maximum-optimisation profile for shipped artifacts (cargo-dist uses `dist`).
+# [profile.dist]
+# inherits = "release"
+# lto = "fat"

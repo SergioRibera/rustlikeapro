@@ -1,0 +1,58 @@
+# deny.toml template (rustlikeapro) for cargo-deny 0.20+.
+# Since 0.16 the old fields (vulnerability, unlicensed, copyleft, deny, default, ...) are hard
+# errors: advisories are denied by default and only `ignore` creates exceptions; licenses are
+# decided only by `allow` + `exceptions`.
+# Run: cargo deny check
+
+[graph]
+# Limit the graph to targets you ship; otherwise Windows-only deps count on Linux builds.
+# targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"]
+all-features = true
+
+[advisories]
+# Every ignore needs an id and a reason; revisit them on each release.
+ignore = [
+    # { id = "RUSTSEC-0000-0000", reason = "not reachable: we never call the affected API" },
+]
+# unmaintained = "workspace"   # Only flag unmaintained crates that are direct workspace deps.
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.9
+exceptions = [
+    # { allow = ["MPL-2.0"], crate = "some-crate" },
+]
+
+[bans]
+# Duplicate versions bloat builds; warn and review, deny once the tree is clean.
+multiple-versions = "warn"
+wildcards = "deny"
+# Path deps inside the workspace are not wildcards for this check.
+allow-wildcard-paths = true
+skip = [
+    # { crate = "windows-sys@0.52", reason = "transitive via mio, waiting for upgrade" },
+]
+deny = [
+    # { crate = "openssl", reason = "use rustls" },
+]
+
+# Build-script allowlist: supply-chain attacks hide in build.rs (e.g. arrayref 0.3.10, 2026).
+# [bans.build]
+# allow-build-scripts = [{ crate = "proc-macro2" }, { crate = "libc" }]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = [
+    # "https://github.com/OWNER/forked-crate",  # Matches a [patch.crates-io] entry; document why.
+]

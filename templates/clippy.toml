@@ -1,0 +1,31 @@
+# clippy.toml template (rustlikeapro). Project policy as config: each entry carries a reason.
+
+# Keep equal to `rust-version` in Cargo.toml so clippy never suggests APIs newer than the MSRV.
+msrv = "1.85"
+
+# Tests may unwrap/expect: a panic is the correct failure there.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-dbg-in-tests = true
+
+# Raise or lower per project; do not set absurd values that disable the lint.
+too-many-arguments-threshold = 7
+
+disallowed-methods = [
+    { path = "std::thread::spawn", reason = "use std::thread::Builder::new().name(..) so threads are identifiable in profilers and panics" },
+    { path = "std::env::set_var", reason = "unsafe in edition 2024 and racy; pass configuration explicitly" },
+    # { path = "std::env::temp_dir", reason = "use tempfile::TempDir so files are cleaned up" },
+]
+
+disallowed-types = [
+    # { path = "std::sync::Mutex", reason = "use parking_lot::Mutex (no poisoning)" },
+    # { path = "std::collections::HashMap", reason = "use ahash/foldhash map in hot paths" },
+]
+
+disallowed-macros = [
+    { path = "std::dbg", reason = "debugging leftover; use tracing::debug!" },
+    # { path = "std::println", reason = "libraries log with tracing" },
+]
+
+# Identifiers that are not markdown mistakes in docs (pedantic `doc_markdown`).
+doc-valid-idents = ["..", "GitHub", "WebAssembly", "iOS", "macOS"]

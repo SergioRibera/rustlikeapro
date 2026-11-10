@@ -1,0 +1,85 @@
+# Release workflow template (rustlikeapro). Copy to .github/workflows/release.yml.
+# Triggered by tags created by cargo-release (`cargo release minor --execute`) or by hand.
+# Alternatives: release-plz (templates/release-plz.toml), cargo-dist, or nix-bundle-app for
+# native installers from a Nix build (references/ecosystem.md).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - run: cargo test --workspace --all-features --locked
+
+  build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, ext: "" }
+          - { os: macos-latest, target: aarch64-apple-darwin, ext: "" }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, ext: ".exe" }
+    runs-on: ${{ matrix.os }}
+    env:
+      BIN: myproj # Binary name; change per project.
+      TARGET: ${{ matrix.target }}
+      EXT: ${{ matrix.ext }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - run: cargo build --release --locked --target "$TARGET"
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "target/$TARGET/release/$BIN$EXT" "dist/$BIN-$TARGET$EXT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # Only this job may create the release.
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" dist/* --generate-notes --verify-tag

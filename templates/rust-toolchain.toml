@@ -1,0 +1,9 @@
+# rust-toolchain.toml template (rustlikeapro).
+# Pin an exact version for reproducible CI/Nix builds ("1.99.1"), or "stable" to float.
+# This is the development toolchain; the MSRV lives in Cargo.toml `rust-version` and is checked by CI.
+[toolchain]
+channel = "stable"
+profile = "minimal"
+components = ["rustfmt", "clippy"]
+# Add only targets you actually build:
+# targets = ["wasm32-unknown-unknown", "aarch64-linux-android", "aarch64-apple-ios"]

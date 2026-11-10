@@ -1,0 +1,18 @@
+# release-plz.toml template (rustlikeapro). Alternative to cargo-release + tag-triggered release.yml:
+# release-plz opens a "release PR" with version bumps + changelog, and publishes on merge.
+# Workflow: release-plz/action@v0.5 on push to main (needs contents: write, pull-requests: write).
+
+[workspace]
+changelog_update = true
+git_release_enable = true
+# Runs cargo-semver-checks to suggest the correct bump for libraries.
+semver_check = true
+# Per-crate tags for multi-crate workspaces; use "v{{ version }}" for a single crate.
+git_tag_name = "{{ package }}-v{{ version }}"
+pr_labels = ["release"]
+
+# Internal crates that must never be published:
+# [[package]]
+# name = "myproj-xtask"
+# publish = false
+# release = false
