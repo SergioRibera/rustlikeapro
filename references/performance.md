@@ -77,7 +77,7 @@ fn encode(bencher: divan::Bencher, size: usize) {
 
 ## 6. Build profiles
 
-The user's projects converge on this baseline (see `templates/Cargo.workspace.toml`):
+A baseline that works well for applications (it matches `templates/Cargo.workspace.toml`):
 
 ```toml
 [profile.dev]
@@ -89,19 +89,19 @@ opt-level = 3            # dependencies (codecs, renderers) fast even in dev; co
 [profile.release]
 lto = "thin"             # most of fat LTO's gain at a fraction of link time
 codegen-units = 1
-strip = true
+strip = true             # smallest binary; panic messages keep file:line, backtraces lose symbols
 panic = "abort"          # applications only; libraries must not rely on it
-debug = "line-tables-only" # symbolized backtraces and profiles without full debuginfo
 
-[profile.profiling]
+[profile.profiling]      # cargo build --profile profiling
 inherits = "release"
-strip = false
-debug = true
+debug = "line-tables-only" # symbolized profiles and backtraces without full debuginfo
+strip = "none"           # `strip = true` would delete the line tables just requested
 ```
 
 Notes:
 
-- `lto = "fat"` can win a few percent more; measure, and watch CI link time (it was the slowest CI step in notinplus).
+- Never combine `strip = true` with `debug = ...` in the same profile: stripping removes the debug info. If shipped binaries need symbolized backtraces, set `debug = "line-tables-only"` with `strip = "none"` (or `split-debuginfo = "packed"` and keep the debug file out of the artifact).
+- `lto = "fat"` can win a few percent more; measure, and watch CI link time (in one example project, fat LTO made the final link the slowest CI step).
 - `overflow-checks = true` in release is a reasonable choice for code handling untrusted input (niri does it).
 - `opt-level = "s"`/`"z"` for size-constrained targets (wasm, embedded).
 - `target-cpu=native` only for binaries that never leave the build machine; never in distributed artifacts.

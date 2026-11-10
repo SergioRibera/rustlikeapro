@@ -25,6 +25,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false # Release jobs read the main-branch cache but never write it (ci-hardening.md).
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --all-features --locked
 
@@ -52,6 +54,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+          save-if: false
       - run: cargo build --release --locked --target "$TARGET"
       - name: Package
         shell: bash
@@ -83,3 +86,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: gh release create "$TAG" dist/* --generate-notes --verify-tag
+
+  # Optional: publish to crates.io with trusted publishing (no long-lived token).
+  # Configure the crate's trusted publisher on crates.io first (repo + workflow file name).
+  # publish:
+  #   needs: release
+  #   runs-on: ubuntu-24.04
+  #   permissions:
+  #     contents: read
+  #     id-token: write # OIDC token exchanged for a short-lived crates.io token; this job only.
+  #   steps:
+  #     - uses: actions/checkout@v7
+  #       with:
+  #         persist-credentials: false
+  #     - uses: dtolnay/rust-toolchain@stable
+  #     - uses: rust-lang/crates-io-auth-action@v1
+  #       id: auth
+  #     - run: cargo publish --workspace --locked
+  #       env:
+  #         CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

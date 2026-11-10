@@ -56,7 +56,7 @@ Check whether an existing workspace dependency already covers the need. Add a de
 ### 8. `#[allow(...)]` to make clippy pass
 **Symptom**: `#[allow(clippy::too_many_arguments)]` slapped on the function that triggered it.
 **Why bad**: the lint was pointing at a design problem.
-**Fix**: fix the code (introduce a params struct or builder). If the lint is genuinely wrong here, use `#[expect(clippy::lint, reason = "…")]` at the narrowest scope.
+**Fix**: fix the code (introduce a params struct or builder). If the lint is genuinely wrong here, use `#[expect(clippy::lint, reason = "…")]` at the narrowest scope. `#[allow(lint, reason = "…")]` only when the lint fires conditionally (per target, feature or macro expansion), where `expect` would be unfulfilled on some builds. Never an `allow` without `reason`.
 
 ### 9. Claiming success without running anything
 **Symptom**: "All tests pass" or "this compiles" with no command output to back it.
@@ -91,7 +91,12 @@ Check whether an existing workspace dependency already covers the need. Add a de
 ### 15. Indexing with `[]` on untrusted or computed indices
 **Symptom**: `buf[offset..offset + len]` with values from input.
 **Why bad**: a panic, which is a DoS in services.
-**Fix**: `buf.get(offset..offset.checked_add(len)?)` and return a typed error on `None`.
+**Fix**: checked arithmetic plus `get`, each `None` turned into a typed error (`?` on an `Option` does not compile in a function returning `Result`):
+
+```rust
+let end = offset.checked_add(len).ok_or(FrameError::Overflow { offset, len })?;
+let payload = buf.get(offset..end).ok_or(FrameError::Truncated { needed: end, got: buf.len() })?;
+```
 
 ### 16. Over-generic code nobody asked for
 **Symptom**: a trait with one implementation, `<T: Into<String> + Clone + Send + 'static>` on internal helpers, a builder for a two-field struct.

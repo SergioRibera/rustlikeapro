@@ -21,6 +21,7 @@
 # Exit code: 0 = everything current, 1 = drift found, 2 = usage error.
 
 set -euo pipefail
+(( BASH_VERSINFO[0] >= 4 )) || { echo "needs bash >= 4 (macOS: brew install bash)" >&2; exit 2; }
 
 skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 templates="${skill_dir}/templates"
@@ -32,7 +33,8 @@ drift=0
 changed=false   # --write touched a file
 clippy_ok=false
 deny_line=""
-ua='rustlikeapro-refresh (https://github.com/SergioRibera)'
+# crates.io asks API clients to identify themselves; set CRATES_IO_USER_AGENT to include contact info.
+ua="${CRATES_IO_USER_AGENT:-rustlikeapro-refresh}"
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 
@@ -131,7 +133,7 @@ if need curl "actions check" && need jq "actions check"; then
   for ref in "${uses[@]}"; do
     repo="${ref%@*}"
     current="${ref#*@}"
-    latest="$(curl -fsS "${auth[@]}" "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null |
+    latest="$(curl -fsS ${auth[@]+"${auth[@]}"} "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null |
       jq -r '.tag_name // empty')" || true
     if [[ -z "$latest" ]]; then
       skip "${repo}: no release info (rate limit? set GITHUB_TOKEN)"
@@ -144,8 +146,11 @@ if need curl "actions check" && need jq "actions check"; then
     else
       bad "${repo}@${current} -> latest ${latest}"
       if $write; then
-        grep -rlF "${repo}@${current}" "${templates}"/*.yml |
-          xargs sed -i "s|${repo}@${current}\b|${repo}@${new_major}|g"
+        # Match the whole tag (`@v2` must not match inside `@v2.1`): next char is not [0-9.] or EOL.
+        ref_re="$(sed 's/[][\.*^$#/]/\\&/g' <<<"${repo}@${current}")"
+        while IFS= read -r yml; do
+          sed -i "s#${ref_re}\\([^0-9.]\\|\$\\)#${repo}@${new_major}\\1#g" "$yml"
+        done < <(grep -rlF "${repo}@${current}" "${templates}"/*.yml)
         changed=true
         printf '        rewritten to %s@%s (review the changelog for breaking inputs)\n' "$repo" "$new_major"
       fi
@@ -159,11 +164,11 @@ section "version mentions (crates & cargo tools)"
 tracked=(
   thiserror anyhow miette color-eyre snafu
   tokio tokio-util futures flume crossbeam-channel rayon parking_lot
-  tracing tracing-subscriber clap serde serde_json bincode postcard
+  tracing tracing-subscriber clap serde serde_json postcard
   proptest insta rstest criterion divan
   cargo-nextest cargo-deny cargo-audit cargo-vet cargo-semver-checks
   release-plz cargo-dist cargo-hack cargo-machete cargo-udeps cargo-llvm-cov cargo-mutants
-  crane typos-cli
+  typos-cli
 )
 if need curl "version check" && need jq "version check"; then
   stale=0

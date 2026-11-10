@@ -2,7 +2,7 @@
 
 > Read when: writing any workflow that runs on pull requests, uses secrets, publishes artifacts or crates, or after a supply-chain incident; reviewing third-party actions.
 
-CI runners execute code from every pull request and every dependency's `build.rs` and proc-macros. 2026 incidents (the `arrayref` build-dependency compromise, targeted attacks on crate maintainers, Miri caches leaking CI secrets) show that CI is the softest target of a Rust project. Defaults below are cheap; apply them to every repo.
+CI runners execute code from every pull request and every dependency's `build.rs` and proc-macros. 2026 incidents — the `arrayref` supply-chain attack (https://blog.rust-lang.org/2026/08/20/supply-chain-attack-on-arrayref/) and targeted attacks on crate maintainers (https://blog.rust-lang.org/2026/09/17/targeted-attacks/) — show that CI is the softest target of a Rust project. Defaults below are cheap; apply them to every repo.
 
 ## Least privilege
 
@@ -59,15 +59,15 @@ jobs:
 ## Secrets
 
 - Scope secrets to the **step** that needs them (`env:` on the step), never workflow-level `env`.
-- Fork PRs do not receive secrets — design caches and pushes to degrade gracefully (sismo's `setup-nix` action: attic login only when `ATTIC_TOKEN` is non-empty, reads still work through the public key).
+- Fork PRs do not receive secrets — design caches and pushes to degrade gracefully (example: sismo's `setup-nix` action logs in to the binary cache only when the token is non-empty; reads still work through the public key).
 - Use environments with required reviewers for publishing secrets (`CARGO_REGISTRY_TOKEN`, signing keys, store credentials).
 - Rotate on any suspected compromise; a build that compiled a malicious crate version could read every secret in its environment.
 
 ## Caches
 
 - Caches are a trust boundary. PR builds should read but not write shared caches: `Swatinem/rust-cache` with `save-if: ${{ github.ref == 'refs/heads/main' }}`.
-- **Do not cache Miri jobs** and keep secrets out of their environment; use a nightly from 2026-09-22 or later after the Miri secret-leak issue (details from secondary sources; the exact advisory URL is unverified).
-- Release builds: build from a clean state or a cache written only by `main`.
+- **Never cache jobs that run untrusted code alongside secrets**, and never let such a job write a cache that privileged jobs restore. This includes Miri jobs: run them uncached and with no secrets in their environment.
+- Release builds: build from a clean state or a cache written only by `main` — with `Swatinem/rust-cache`, set `save-if: false` in release jobs so they never write.
 
 ## Static analysis of workflows
 
@@ -80,12 +80,13 @@ zizmor:
   steps:
     - uses: actions/checkout@<sha> # v7
       with: { persist-credentials: false }
-    - uses: taiki-e/install-action@<sha> # v2
-      with: { tool: zizmor }
-    - run: zizmor .github/workflows
+    - uses: zizmorcore/zizmor-action@<sha> # v0.8.1
+      with:
+        # true uploads SARIF to code scanning and needs `security-events: write`.
+        advanced-security: false
 ```
 
-zizmor flags template injection, unpinned actions, excessive permissions, `persist-credentials`, dangerous triggers and cache poisoning. Whether `taiki-e/install-action` ships `zizmor` is unverified — fall back to `pipx run zizmor` or the official action if not.
+zizmor flags template injection, unpinned actions, excessive permissions, `persist-credentials`, dangerous triggers and cache poisoning. `zizmorcore/zizmor-action` is the official action; `pipx run zizmor .github/workflows` works locally.
 
 ## Build-time code
 
@@ -96,7 +97,25 @@ zizmor flags template injection, unpinned actions, excessive permissions, `persi
 ## Publishing
 
 - Publish from a dedicated, manually approved or tag-triggered job, with the token scoped to that job's environment.
-- Prefer short-lived credentials (OIDC) where the registry supports it. crates.io trusted publishing exists, but its current workflow inputs are not verified here — check the crates.io docs before wiring it.
+- Prefer short-lived credentials (OIDC). **crates.io trusted publishing**: configure the trusted publisher (repo + workflow file) in the crate's crates.io settings (https://crates.io/docs/trusted-publishing), then exchange the job's OIDC token for a temporary crates.io token, which the action revokes when the job ends — no long-lived `CARGO_REGISTRY_TOKEN` secret:
+
+  ```yaml
+  publish:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write        # required for the OIDC exchange
+    steps:
+      - uses: actions/checkout@<sha> # v7
+        with: { persist-credentials: false }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rust-lang/crates-io-auth-action@<sha> # v1.0.6
+        id: auth
+      - run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+  ```
 - Attach checksums (`SHA256SUMS`) to release artifacts; nix-bundle-app's `release` and cargo-dist generate them (`release.md`).
 
 ## Anti-patterns
@@ -116,7 +135,7 @@ zizmor flags template injection, unpinned actions, excessive permissions, `persi
 - [ ] `persist-credentials: false` on checkout (except pushing jobs).
 - [ ] No `pull_request_target`; no `${{ }}` of untrusted data in `run:`.
 - [ ] Secrets step-scoped; publishing behind an environment.
-- [ ] Cache writes only from `main`; Miri uncached.
+- [ ] Cache writes only from `main`; release jobs `save-if: false`; Miri and other untrusted-code jobs uncached.
 - [ ] zizmor in CI.
 
 Related: `ci-cd.md`, `supply-chain.md`, `release.md`, `../templates/ci.yml`, `../templates/release.yml`.

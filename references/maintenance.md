@@ -20,7 +20,7 @@ Why `major.minor`:
 
 - Cargo requirements are caret by default: `"1.54"` means `>=1.54.0, <2.0.0`; `"0.8"` means `>=0.8.0, <0.9.0`. Patch (and, for 1.x, minor) releases stay inside the range, so `cargo update` picks them up without touching `Cargo.toml`.
 - The minor floor documents the API level the code was written against. `"1"` would claim compatibility with `1.0.0`, which is almost never tested.
-- The exact version lives in `Cargo.lock`, which is the reproducibility mechanism, not `Cargo.toml`. Commit `Cargo.lock` for binaries and workspaces with binaries; libraries may commit it too (Cargo's current guidance leaves it to the project).
+- The exact version lives in `Cargo.lock`, which is the reproducibility mechanism, not `Cargo.toml`. Commit `Cargo.lock` in every project, libraries included (Cargo's default since 2023), and build with `--locked` in CI. Downstream users of a library ignore its lockfile, so this costs nothing and makes CI reproducible.
 - `0.0.x` crates break on every release, so the full version is kept for them.
 
 ```bash
@@ -32,7 +32,8 @@ scripts/add-dep.sh --dry-run serde                    # show what would happen
 Without the script:
 
 ```bash
-cargo info thiserror                 # "version: 2.0.21" — latest stable (cargo >= 1.82)
+cargo info thiserror                 # run OUTSIDE a project: "version: 2.0.21" is the latest stable (cargo >= 1.82)
+                                     # inside a project it prints the locked one: "version: 2.0.12 (latest 2.0.21)"
 cargo add thiserror@2.0              # explicit major.minor requirement
 ```
 
@@ -48,7 +49,7 @@ Ask: does std or an existing dependency already cover this? Check maintenance (l
 
 ### Keeping the floor honest
 
-A `major.minor` floor is only true if the code compiles against that minor. Libraries should verify it in CI with a minimal-versions check (nightly): `cargo +nightly update -Z minimal-versions && cargo check --all-targets`, or `cargo hack check --rust-version` / `cargo minimal-versions` if installed. When code starts using an API added in a later minor, raise the floor in the same commit.
+A `major.minor` floor is only true if the code compiles against that minor. Libraries should verify it in CI with a minimal-versions check (nightly): `cargo +nightly update -Z direct-minimal-versions && cargo check --all-targets` (direct dependencies at their floors; `-Z minimal-versions` also floors transitive ones and often fails on crates you do not control). This is separate from the MSRV check (`cargo hack check --rust-version`, or a job on the `rust-version` toolchain), which verifies the compiler floor, not the dependency floors. When code starts using an API added in a later minor, raise the floor in the same commit.
 
 ## Updating a project
 
@@ -101,5 +102,5 @@ Automation: `.github/workflows/refresh.yml` in the skill's repository runs weekl
 - [ ] Workspace: version only in `[workspace.dependencies]`, members use `workspace = true`
 - [ ] No MSRV warning, or MSRV bump recorded in the decision log
 - [ ] Default features reviewed; license and advisories pass `cargo deny check`
-- [ ] `Cargo.lock` committed (binaries) and updated in the same commit
+- [ ] `Cargo.lock` committed (every project) and updated in the same commit
 - [ ] Dependabot/Renovate configured for `cargo` and `github-actions`

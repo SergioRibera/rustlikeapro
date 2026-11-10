@@ -104,8 +104,19 @@ Do not re-export a dependency's error type as your own variant payload in a publ
 ```rust
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct HttpError(#[from] reqwest::Error); // private field: reqwest stays an implementation detail
+pub struct HttpError(reqwest::Error); // private field, no `#[from]`
+
+impl HttpError {
+    // pub(crate): a public `From<reqwest::Error>` would put reqwest in the semver surface.
+    pub(crate) fn new(source: reqwest::Error) -> Self {
+        Self(source)
+    }
+}
+
+// internal call sites: client.get(url).send().await.map_err(HttpError::new)?
 ```
+
+`#[from]` generates a **public** `impl From<reqwest::Error> for HttpError`, so callers could rely on it and a reqwest major bump becomes your breaking change. Keep the constructor crate-private and convert with `map_err`.
 
 ## 4. Reporting in binaries
 

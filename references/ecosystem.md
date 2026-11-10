@@ -40,6 +40,8 @@ The istmo template already has a `use_nix_bundle` option, and sismo has an `istm
 
 **Maturity**: `0.1.1-alpha.5`, early alpha. The README warns that the API shape churns between minor releases. Always tell the user this.
 
+**Dependency note**: istmo's generated codec uses `bincode` 2, which RustSec flags as unmaintained (RUSTSEC-2025-0141, Dec 2025; the bincode team ceased development). Projects running `cargo deny check` with `unmaintained = "all"` will see it (with `"workspace"` only when bincode is also a direct dependency) — record an `ignore` entry with a reason (it is the framework's transitive choice) or follow istmo's migration if it moves to a maintained format (postcard, bitcode, wincode).
+
 **Suggest when**:
 - a Rust app must run on Android and/or iOS (often also desktop) and needs native platform APIs (sign-in, biometrics, camera, file picking, share sheets, secure storage);
 - someone is hand-writing JNI or Swift FFI glue per feature.

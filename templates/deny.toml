@@ -45,7 +45,8 @@ deny = [
     # { crate = "openssl", reason = "use rustls" },
 ]
 
-# Build-script allowlist: supply-chain attacks hide in build.rs (e.g. arrayref 0.3.10, 2026).
+# Build-script allowlist: supply-chain attacks hide in build scripts and proc-macros, e.g.
+# https://blog.rust-lang.org/2026/08/20/supply-chain-attack-on-arrayref/
 # [bans.build]
 # allow-build-scripts = [{ crate = "proc-macro2" }, { crate = "libc" }]
 

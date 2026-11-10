@@ -126,7 +126,30 @@ Model the config as a typed struct with `Default`, deserialize it, then apply ov
 pub struct Config {
     pub listen: std::net::SocketAddr,
     pub max_connections: NonZeroU32,
-    pub log_level: String,
+    pub log_level: LogLevel, // an enum, not a String: "debgu" fails at load time
+}
+
+#[derive(Debug, Clone, Copy, Default, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Error,
+    Warn,
+    #[default]
+    Info,
+    Debug,
+    Trace,
+}
+
+impl From<LogLevel> for tracing::level_filters::LevelFilter {
+    fn from(level: LogLevel) -> Self {
+        match level {
+            LogLevel::Error => Self::ERROR,
+            LogLevel::Warn => Self::WARN,
+            LogLevel::Info => Self::INFO,
+            LogLevel::Debug => Self::DEBUG,
+            LogLevel::Trace => Self::TRACE,
+        }
+    }
 }
 
 impl Default for Config {

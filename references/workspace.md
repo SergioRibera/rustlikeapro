@@ -7,7 +7,7 @@
 ```
 my-project/
   Cargo.toml              # virtual manifest: [workspace] only
-  Cargo.lock              # committed for binaries AND libraries
+  Cargo.lock              # committed in every project (libraries too); CI uses --locked
   rust-toolchain.toml
   clippy.toml  rustfmt.toml  deny.toml  typos.toml  justfile
   AGENTS.md               # decision log + agent rules (CLAUDE.md -> "@AGENTS.md")
@@ -20,7 +20,7 @@ my-project/
   examples/  benches/  tests/
 ```
 
-- Crate names: `<project>-core`, `<project>-<domain>` in kebab-case (the user's istmo, ansync, ferricast, sismo all follow this). Import names become `my_project_core`.
+- Crate names: `<project>-core`, `<project>-<domain>` in kebab-case (projects such as istmo, sismo or ferricast follow this). Import names become `my_project_core`.
 - **`-core` holds what more than one member needs**: domain types, error enums, traits, newtype IDs. Duplicated type definitions across crates drift; conversions between near-identical types are noise.
 - Split crates by **compile boundary and dependency weight**, not by file count: a proc-macro, an FFI crate (allowed to use unsafe), a heavy UI crate, a crate published separately.
 - Do not create a crate per module "for cleanliness" — each crate costs compile time, a manifest and a version.
@@ -36,16 +36,17 @@ members = ["crates/*", "bins/*"]
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"   # let chains need 1.88
 version = "0.1.0"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/<owner>/<repo>"
 
 [workspace.dependencies]
 my-project-core = { path = "crates/my-project-core", version = "0.1.0" }
-thiserror = "2"
+# Versions come from `cargo add` (major.minor), never typed from memory.
+thiserror = "2.0"
 tracing = "0.1"
-tokio = { version = "1", default-features = false }
+tokio = { version = "1.54", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -54,7 +55,6 @@ missing_debug_implementations = "warn"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
-module_name_repetitions = "allow"
 ```
 
 Member manifest:
@@ -82,19 +82,19 @@ Rules:
 - Intra-workspace path deps also carry `version` so the crates can be published.
 - Group `[workspace.dependencies]` by purpose with comments (`# async`, `# serialization`, `# ui`) once the list grows.
 - `resolver = "3"` (default for edition 2024, must be explicit in a virtual manifest) is **MSRV-aware**: it prefers dependency versions compatible with `rust-version`. Keep `rust-version` truthful — the MSRV CI job proves it (`ci-cd.md`).
-- **Feature unification note (Rust 1.99, edition 2024):** a member's `default-features = false` now overrides the inherited workspace setting. Before, defaults stayed on unless the workspace entry disabled them. Prefer declaring `default-features = false` in the workspace entry and enabling features per member.
+- **Default features of inherited dependencies:** a member cannot turn off default features the workspace entry leaves on — on edition 2024 a member-side `default-features = false` on such an entry is an error (earlier editions only warned and ignored it). Declare `default-features = false` in `[workspace.dependencies]` and enable features per member. See the Cargo reference, "Inheriting a dependency from a workspace".
 - Tokio and other big crates: explicit feature lists, never `"full"` in libraries.
 
 ## Lint inheritance
 
-- `[workspace.lints]` + `[lints] workspace = true` in every member. A member needing different lints (FFI crate) writes its own complete `[lints]` table — inheritance is all or nothing.
+- `[workspace.lints]` + `[lints] workspace = true` in every member. A member needing different lints (FFI crate) drops `workspace = true` and writes its own **complete** `[lints.rust]` / `[lints.clippy]` tables (copy the baseline, change `unsafe_code`, comment why) — inheritance is all or nothing, and Cargo rejects `[lints.rust]` next to `workspace = true`. Same recipe as `unsafe-ffi.md`.
 - Lint groups need `priority = -1` so individual overrides win; otherwise clippy reports `lint_groups_priority`.
 - Lints never apply to dependencies (cargo passes `--cap-lints`).
-- See `../templates/Cargo.workspace.toml` for the full baseline and `../templates/clippy.toml` for config-level policy (`msrv`, `allow-unwrap-in-tests`, `disallowed-methods`).
+- See `../templates/Cargo.workspace.toml` for the full baseline and `../templates/clippy.toml` for config-level policy (`allow-unwrap-in-tests`, `disallowed-methods`; clippy reads the MSRV from `rust-version`).
 
 ## Build profiles
 
-The user's established baseline, each line commented in the real manifest:
+A proven baseline (used in projects such as sismo and notinplus); comment each line in the real manifest:
 
 ```toml
 [profile.dev]
@@ -146,7 +146,7 @@ winit = { git = "https://github.com/<fork>/winit", rev = "<sha>" }
 ```
 
 - Always pin `rev` (never a moving branch) and always comment the reason plus the removal condition.
-- A crate with `[patch]` cannot be published as-is; keep patches in binary workspaces.
+- `[patch]` only applies in the root workspace: it is **not** applied for downstream users of a published crate, so a library that only works with the patch is broken for everyone else. Keep patches in binary workspaces, or wait for the upstream release before publishing.
 - `cargo deny` with `[sources]` must allow that git source explicitly (`supply-chain.md`).
 
 ## Platform-specific dependencies

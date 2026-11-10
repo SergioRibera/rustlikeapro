@@ -10,7 +10,8 @@
 
 ```toml
 [workspace.dependencies]
-tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal"] }
+# version from `cargo add` (major.minor), never typed from memory
+tokio = { version = "1.54", default-features = false, features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal"] }
 ```
 
 - Configure the runtime in `main` only:
@@ -35,7 +36,7 @@ Blocking inside an async task stalls every other task on that worker.
 | CPU-heavy work (hashing, compression, parsing big files) | `tokio::task::spawn_blocking`, or `rayon` with a oneshot channel |
 | a synchronous library call you cannot avoid | `spawn_blocking` |
 
-`Runtime::block_on` or `#[tokio::main]` inside an existing runtime **panics** ("Cannot start a runtime from within a runtime"). This often happens through `reqwest::blocking` in async code.
+`Runtime::block_on` (or a `#[tokio::main]` function called) inside an existing runtime **panics** ("Cannot start a runtime from within a runtime"), and so does dropping a `Runtime` from within an async context. Merely constructing one with `Runtime::new()` does not. This often happens through `reqwest::blocking` in async code.
 
 ## 3. Locks across `.await`
 
@@ -124,12 +125,21 @@ impl Server {
                     }
                     Err(err) => tracing::warn!(%err, "accept failed"),
                 },
+                // Reap finished connections; a JoinSet otherwise keeps every
+                // completed task's output until shutdown (unbounded growth).
+                Some(joined) = self.tasks.join_next() => {
+                    if let Err(err) = joined {
+                        tracing::error!(%err, "connection task panicked");
+                    }
+                }
             }
         }
         while self.tasks.join_next().await.is_some() {}
     }
 }
 ```
+
+When task outputs are not needed, `tokio_util::task::TaskTracker` avoids the reaping entirely: it frees completed tasks immediately and offers `close()` + `wait()` for shutdown.
 
 In `main`, cancel the token on `tokio::signal::ctrl_c()` (and `SIGTERM` via `tokio::signal::unix` on Unix). Give tasks a deadline (`timeout`) to finish before exiting.
 

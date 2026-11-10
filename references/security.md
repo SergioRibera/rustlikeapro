@@ -42,7 +42,7 @@ Better still, let the primitive do it: verify via `hmac::Mac::verify_slice`, or 
 
 - **Never implement your own crypto primitives or protocols.** Use audited crates: RustCrypto (`sha2`, `hmac`, `aes-gcm`, `chacha20poly1305`, `argon2`, `ed25519-dalek`) or `ring` / `aws-lc-rs`.
 - Passwords: `argon2` (or `scrypt` / `bcrypt`) with per-user salts, never a plain hash.
-- Randomness for keys, tokens and nonces: OS CSPRNG (`rand::rngs::OsRng` / `getrandom`). Never `thread_rng` seeded from time, and never a `SmallRng`.
+- Randomness for keys, tokens and nonces: the OS CSPRNG directly (`getrandom`, or `rand::rngs::OsRng`). `rand`'s thread-local RNG (`rand::rng()` in rand 0.9, formerly `thread_rng()`) is a CSPRNG seeded from the OS, fine for general use, but for long-lived key material prefer the OS source. Never `SmallRng`/`StdRng::seed_from_u64` or any time-based seed for secrets.
 - AEAD nonces must never repeat under the same key. Use random 192-bit nonces (XChaCha20-Poly1305) or a counter you can prove unique.
 
 ## TLS
@@ -82,8 +82,11 @@ Everything from the network, a file the user didn't author, IPC, a plugin or a c
 
   ```rust
   fn safe_join(base: &Path, user: &Path) -> Result<PathBuf, PathError> {
+      // RootDir too: on Windows `\x` is not `is_absolute()` but still escapes the base.
       if user.is_absolute()
-          || user.components().any(|c| matches!(c, Component::ParentDir | Component::Prefix(_)))
+          || user.components().any(|c| {
+              matches!(c, Component::ParentDir | Component::RootDir | Component::Prefix(_))
+          })
       {
           return Err(PathError::Escapes);
       }
@@ -104,7 +107,7 @@ Everything from the network, a file the user didn't author, IPC, a plugin or a c
 
 ## Deserialization and plugins
 
-- Untrusted serialized data: size limits (bincode 2 config limit, `serde_json` with a bounded reader), no `#[serde(untagged)]` on security-relevant types (ambiguous matching), and validation via `TryFrom`.
+- Untrusted serialized data: size limits (cap the input buffer before decoding with `postcard`/`bitcode`, `serde_json` with a bounded reader), no `#[serde(untagged)]` on security-relevant types (ambiguous matching), and validation via `TryFrom`.
 - Dynamically loaded plugins (`libloading`, `stabby`) run with full process privileges. Loading one is executing code; treat plugin directories as trusted-only and document it.
 
 ## Fuzzing
@@ -112,7 +115,7 @@ Everything from the network, a file the user didn't author, IPC, a plugin or a c
 Fuzz every parser of untrusted input (custom binary formats, protocol decoders, config parsers, codecs):
 
 ```bash
-cargo install cargo-fuzz        # requires nightly
+cargo install --locked cargo-fuzz   # installs on stable; running needs nightly
 cargo fuzz init
 cargo fuzz add parse_frame
 cargo +nightly fuzz run parse_frame
@@ -141,10 +144,10 @@ Every `unsafe` block is security-relevant. Review rules (details in `references/
 
 ## Supply chain
 
-A malicious or compromised dependency runs code at build time (`build.rs`, proc macros) and at runtime. In 2026 crates.io saw a compromised popular crate shipping a malicious build-script dependency, and targeted attacks on maintainers. Defenses live in `references/supply-chain.md`:
+A malicious or compromised dependency runs code at build time (`build.rs`, proc macros) and at runtime. This is not hypothetical: the Rust blog reported a compromised crate pulling in a malicious build-script dependency (https://blog.rust-lang.org/2026/08/20/supply-chain-attack-on-arrayref/). Defenses live in `references/supply-chain.md`:
 
 - `cargo deny check` (advisories, licenses, bans, sources) in CI and on a schedule.
-- `Cargo.lock` committed for binaries; `--locked` in CI.
+- `Cargo.lock` committed in every project, libraries included; `--locked` in CI.
 - Review new dependencies (maintainers, download count, `build.rs`, proc macros) before adding them; prefer fewer dependencies.
 
 ## Checklist

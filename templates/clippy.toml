@@ -1,7 +1,6 @@
 # clippy.toml template (rustlikeapro). Project policy as config: each entry carries a reason.
+# No `msrv` key: clippy reads `rust-version` from Cargo.toml; a second copy drifts.
 
-# Keep equal to `rust-version` in Cargo.toml so clippy never suggests APIs newer than the MSRV.
-msrv = "1.85"
 
 # Tests may unwrap/expect: a panic is the correct failure there.
 allow-unwrap-in-tests = true
@@ -23,7 +22,7 @@ disallowed-types = [
 ]
 
 disallowed-macros = [
-    { path = "std::dbg", reason = "debugging leftover; use tracing::debug!" },
+    # `dbg!` is covered by `clippy::dbg_macro` (which honours allow-dbg-in-tests).
     # { path = "std::println", reason = "libraries log with tracing" },
 ]
 

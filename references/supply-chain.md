@@ -6,16 +6,16 @@ Every dependency is code you ship and code that runs on your machine at build ti
 
 ## Before adding a dependency
 
-1. **Does std or an existing dependency already do it?** Check `Cargo.lock` — the crate may already be in the tree. Common std replacements: `LazyLock`/`OnceLock` (not `lazy_static`/`once_cell`), `std::thread::scope`, `Option::is_none_or`, `assert_matches!` (1.96), `cfg_select!` (1.95).
-2. **Verify it exists and is the right crate.** Look it up on crates.io / docs.rs or in `~/.cargo/registry`. Agents hallucinate crate names; attackers register similar names (the 2026 `arrayref` compromise pulled in a malicious `proc-macro1` build dependency — note the near-miss with `proc-macro2`).
+1. **Does std or an existing dependency already do it?** Check `Cargo.lock` — the crate may already be in the tree. Common std replacements: `LazyLock`/`OnceLock` (not `lazy_static`/`once_cell`; `LazyLock` needs 1.80), `std::thread::scope`, `Option::is_none_or` (1.82), `assert_matches!` (requires rust-version ≥ 1.96), `cfg_select!` (requires rust-version ≥ 1.95). Check against the project's MSRV before replacing a crate with a newer std item.
+2. **Verify it exists and is the right crate.** Look it up on crates.io / docs.rs or in `~/.cargo/registry`. Agents hallucinate crate names; attackers also compromise or impersonate real crates (see the Rust blog post on the 2026 `arrayref` supply-chain attack: https://blog.rust-lang.org/2026/08/20/supply-chain-attack-on-arrayref/). Check the exact name character by character, especially for build-time dependencies.
 3. **Assess**: maintainers and recent activity, download count, number of transitive deps (`cargo tree -p <crate> -e normal`), `build.rs` / proc-macro presence, `unsafe` usage, license.
 4. **Minimize features**: `default-features = false` plus exactly what you need.
 5. **Add it with `cargo add` (or `../scripts/add-dep.sh`), never with a version typed from memory**, as a `major.minor` requirement (`"2.0"`, `"0.8"`) so `cargo update` keeps patches flowing. In workspaces the version goes to `[workspace.dependencies]`, not to a member directly (`workspace.md`). Full policy, MSRV interaction and minimal-versions check: [maintenance.md](maintenance.md#adding-dependencies).
-6. Prefer pure-Rust TLS: `rustls` with `default-features = false` over OpenSSL (easier cross-compilation, no system lib, smaller attack surface). The user's ansync rules forbid OpenSSL outright.
+6. Prefer pure-Rust TLS: `rustls` with `default-features = false` over OpenSSL (easier cross-compilation, no system lib, smaller attack surface). Some projects (e.g. ansync) forbid OpenSSL outright; follow the decision log.
 
 ## Lockfile discipline
 
-- Commit `Cargo.lock` for every project (binaries and libraries).
+- Commit `Cargo.lock` in every project, libraries included (Cargo's guidance since 2023): reproducible CI and bisectable history. Downstream users of a library are unaffected — they resolve with their own lockfile.
 - CI builds with `--locked` so a stale lockfile fails instead of silently resolving new versions.
 - Upgrade deliberately: `cargo update -p <crate>` or a scheduled job (below), reviewed like code.
 - Libraries: verify lower bounds with `cargo +nightly update -Z minimal-versions && cargo check` (smithay's `check-minimal` job). Your `Cargo.toml` claims `serde = "1.0"` works; this proves it.

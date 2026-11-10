@@ -21,6 +21,9 @@ miss() { printf '  MISS  %s\n        fix: %s\n' "$1" "$2"; miss=$((miss + 1)); }
 
 # All Rust sources outside target/ and vendored dirs.
 rs_files() { find . \( -path ./target -o -path ./vendor -o -path '*/node_modules' -o -path './.git' \) -prune -o -name '*.rs' -print; }
+# NUL-separated variant for xargs -0 (paths with spaces); `rs_grep` runs grep over all sources.
+rs_files0() { find . \( -path ./target -o -path ./vendor -o -path '*/node_modules' -o -path './.git' \) -prune -o -name '*.rs' -print0; }
+rs_grep() { rs_files0 | xargs -0 grep "$@" /dev/null 2>/dev/null || true; }
 manifests() { find . \( -path ./target -o -path ./vendor -o -path './.git' \) -prune -o -name Cargo.toml -print; }
 
 echo "rustlikeapro audit — $(pwd)"
@@ -31,28 +34,28 @@ if [[ -f rust-toolchain.toml ]]; then ok "rust-toolchain.toml present"
 elif [[ -f rust-toolchain ]]; then warn "legacy rust-toolchain file" "$tpl/rust-toolchain.toml"
 else miss "no rust-toolchain.toml" "$tpl/rust-toolchain.toml"; fi
 
-if grep -Eq '^\s*rust-version\s*=' Cargo.toml; then ok "rust-version declared"
+if grep -Eq '^[[:space:]]*rust-version[[:space:]]*=' Cargo.toml; then ok "rust-version declared"
 else miss "no rust-version (MSRV) in root Cargo.toml" "$tpl/Cargo.workspace.toml [workspace.package]"; fi
 
-if grep -Eq '^\s*edition\s*=\s*"2024"' Cargo.toml; then ok "edition 2024"
-elif grep -Eq '^\s*edition\s*=' Cargo.toml; then warn "edition older than 2024 (upgrade deliberately: cargo fix --edition)" "$tpl/Cargo.workspace.toml"
+if grep -Eq '^[[:space:]]*edition[[:space:]]*=[[:space:]]*"2024"' Cargo.toml; then ok "edition 2024"
+elif grep -Eq '^[[:space:]]*edition[[:space:]]*=' Cargo.toml; then warn "edition older than 2024 (upgrade deliberately: cargo fix --edition)" "$tpl/Cargo.workspace.toml"
 else warn "no edition in root manifest (fine for virtual workspace if members set it)" "$tpl/Cargo.workspace.toml"; fi
 
 if grep -q '^\[workspace\]' Cargo.toml; then
-  if grep -Eq '^\s*resolver\s*=\s*"3"' Cargo.toml; then ok "resolver = \"3\""
+  if grep -Eq '^[[:space:]]*resolver[[:space:]]*=[[:space:]]*"3"' Cargo.toml; then ok "resolver = \"3\""
   else warn "workspace without resolver = \"3\" (MSRV-aware resolution)" "$tpl/Cargo.workspace.toml"; fi
 fi
 
 if grep -Eq '^\[(workspace\.)?lints' Cargo.toml; then ok "[lints] table in root manifest"
 else miss "no [workspace.lints]/[lints] table — lints only enforced by CLI flags, if at all" "$tpl/Cargo.workspace.toml"; fi
 
-if grep -Eq '^\s*pedantic\s*=' Cargo.toml; then ok "clippy::pedantic enabled"
+if grep -Eq '^[[:space:]]*pedantic[[:space:]]*=' Cargo.toml; then ok "clippy::pedantic enabled"
 else miss "clippy::pedantic not enabled in manifest" "$tpl/Cargo.workspace.toml [workspace.lints.clippy]"; fi
 
-if grep -Eq '^\s*unwrap_used\s*=' Cargo.toml; then ok "clippy::unwrap_used configured"
+if grep -Eq '^[[:space:]]*unwrap_used[[:space:]]*=' Cargo.toml; then ok "clippy::unwrap_used configured"
 else warn "clippy::unwrap_used not enabled (no-unwrap rule is not enforced)" "$tpl/Cargo.workspace.toml"; fi
 
-if grep -Eq '^\s*undocumented_unsafe_blocks\s*=' Cargo.toml; then ok "undocumented_unsafe_blocks configured"
+if grep -Eq '^[[:space:]]*undocumented_unsafe_blocks[[:space:]]*=' Cargo.toml; then ok "undocumented_unsafe_blocks configured"
 else warn "undocumented_unsafe_blocks not enabled" "$tpl/Cargo.workspace.toml"; fi
 
 if grep -q '^\[workspace\]' Cargo.toml; then
@@ -61,7 +64,14 @@ if grep -q '^\[workspace\]' Cargo.toml; then
     [[ "$m" == "./Cargo.toml" ]] && continue
     grep -q '^\[package\]' "$m" || continue
     members=$((members + 1))
-    if grep -Eq '^\s*workspace\s*=\s*true' "$m" && grep -q '^\[lints\]' "$m"; then inheriting=$((inheriting + 1)); fi
+    # `workspace = true` must sit under the [lints] table (dependency entries use it too).
+    if awk '
+      /^\[/ { in_lints = ($0 ~ /^\[lints\][[:space:]]*(#.*)?$/) }
+      in_lints && /^[[:space:]]*workspace[[:space:]]*=[[:space:]]*true/ { found = 1 }
+      END { exit !found }
+    ' "$m" || grep -Eq '^[[:space:]]*lints\.workspace[[:space:]]*=[[:space:]]*true' "$m"; then
+      inheriting=$((inheriting + 1))
+    fi
   done < <(manifests)
   if (( members > 0 )); then
     if (( inheriting == members )); then ok "all $members members inherit workspace lints"
@@ -72,9 +82,9 @@ fi
 echo
 echo "Config files"
 if [[ -f clippy.toml || -f .clippy.toml ]]; then ok "clippy.toml present"
-else warn "no clippy.toml (msrv, allow-unwrap-in-tests, disallowed-*)" "$tpl/clippy.toml"; fi
+else warn "no clippy.toml (allow-unwrap-in-tests, disallowed-*)" "$tpl/clippy.toml"; fi
 if [[ -f rustfmt.toml || -f .rustfmt.toml ]]; then
-  if grep -Eq 'edition\s*=\s*"20(15|18|21)"' rustfmt.toml .rustfmt.toml 2>/dev/null; then warn "rustfmt.toml edition older than manifest?" "$tpl/rustfmt.toml"
+  if grep -Eq 'edition[[:space:]]*=[[:space:]]*"20(15|18|21)"' rustfmt.toml .rustfmt.toml 2>/dev/null; then warn "rustfmt.toml edition older than manifest?" "$tpl/rustfmt.toml"
   else ok "rustfmt.toml present"; fi
 else warn "no rustfmt.toml" "$tpl/rustfmt.toml"; fi
 if [[ -f deny.toml || -f .config/deny.toml ]]; then ok "deny.toml present"
@@ -85,10 +95,9 @@ if [[ -f AGENTS.md ]]; then ok "AGENTS.md present"
 elif [[ -f CLAUDE.md ]]; then warn "CLAUDE.md only — other agents won't read it (move to AGENTS.md, CLAUDE.md = '@AGENTS.md')" "$tpl/AGENTS.md"
 else miss "no AGENTS.md / CLAUDE.md (rules + decision log)" "$tpl/AGENTS.md"; fi
 
-if find . \( -path ./target -o -path './.git' \) -prune -o -path '*/src/main.rs' -print -quit | grep -q .; then
-  if [[ -f Cargo.lock ]]; then ok "Cargo.lock present (binary crates)"
-  else miss "binary crate without committed Cargo.lock" "commit Cargo.lock; use --locked in CI"; fi
-fi
+# Policy: commit Cargo.lock in every project, libraries included (references/maintenance.md).
+if [[ -f Cargo.lock ]]; then ok "Cargo.lock present"
+else miss "no committed Cargo.lock" "commit Cargo.lock; use --locked in CI"; fi
 
 # Dependency requirement style: major.minor ("1.4", "0.8"). Flags major-only ("1")
 # and patch-pinned ("1.4.2") requirements inside *dependencies tables; 0.0.x is exempt.
@@ -145,19 +154,25 @@ mod_rs=$(rs_files | grep -c '/mod\.rs$' || true)
 if (( mod_rs == 0 )); then ok "no mod.rs files ($total_rs .rs files)"
 else warn "$mod_rs mod.rs files (prefer foo.rs + foo/)" "move foo/mod.rs to foo.rs"; fi
 
-allow_count=$( (rs_files | xargs -r grep -hoE '#!?\[allow\(' 2>/dev/null || true) | wc -l)
-expect_count=$( (rs_files | xargs -r grep -hoE '#!?\[expect\(' 2>/dev/null || true) | wc -l)
-if (( allow_count == 0 )); then ok "no #[allow(..)] ($expect_count #[expect(..)])"
-else warn "$allow_count #[allow(..)] vs $expect_count #[expect(..)] — migrate to #[expect(lint, reason = \"..\")]" "SKILL.md §1"; fi
+# "Bare" = #[allow(..)] without `reason = ".."` (single-line heuristic). A reasoned #[allow]
+# is legitimate when the lint fires conditionally (cfg/target/feature/macro).
+allow_lines="$(rs_grep -hE '#!?\[allow\(')"
+allow_count=$(grep -c . <<<"$allow_lines" || true)
+bare_allow=$(grep -vc 'reason' <<<"$allow_lines" || true)
+[[ -z "$allow_lines" ]] && bare_allow=0
+expect_count=$(rs_grep -hoE '#!?\[expect\(' | wc -l)
+if (( bare_allow == 0 )); then ok "no bare #[allow(..)] ($allow_count with reason, $expect_count #[expect(..)])"
+else warn "$bare_allow bare #[allow(..)] (no reason), $((allow_count - bare_allow)) with reason, $expect_count #[expect(..)] — use #[expect(lint, reason = \"..\")]; #[allow(.., reason)] only for conditional lints" "SKILL.md §1"; fi
 
 # Rough count: unwrap() in files that are not tests/examples/benches/build scripts.
-unwrap_count=$( (rs_files | grep -vE '/(tests|examples|benches)/|/build\.rs$|_test\.rs$|/tests\.rs$' \
-  | xargs -r grep -hE '\.unwrap\(\)' 2>/dev/null || true) | wc -l)
+unwrap_count=$(find . \( -path ./target -o -path ./vendor -o -path './.git' -o -path '*/tests' -o -path '*/examples' -o -path '*/benches' \) -prune \
+  -o -name '*.rs' ! -name build.rs ! -name '*_test.rs' ! -name tests.rs -print0 |
+  xargs -0 grep -hE '\.unwrap\(\)' /dev/null 2>/dev/null | wc -l)
 if (( unwrap_count == 0 )); then ok "no .unwrap() outside tests/examples (rough)"
 else warn "~$unwrap_count .unwrap() lines outside tests/examples (includes #[cfg(test)] modules; rough)" "SKILL.md §3 Panics"; fi
 
-unsafe_count=$( (rs_files | xargs -r grep -hE '\bunsafe\s*\{' 2>/dev/null || true) | wc -l)
-safety_count=$( (rs_files | xargs -r grep -hE '//\s*SAFETY:' 2>/dev/null || true) | wc -l)
+unsafe_count=$(rs_grep -hE '(^|[^A-Za-z0-9_])unsafe[[:space:]]*\{' | wc -l)
+safety_count=$(rs_grep -hE '//[[:space:]]*SAFETY:' | wc -l)
 if (( unsafe_count > 0 )); then
   if (( safety_count >= unsafe_count )); then ok "$unsafe_count unsafe blocks, $safety_count SAFETY comments"
   else warn "$unsafe_count unsafe blocks but only $safety_count SAFETY comments" "references/unsafe-ffi.md"; fi

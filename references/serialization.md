@@ -6,7 +6,7 @@
 
 `serde` is the ecosystem default for Rust serialization and usually the right choice. It is **not** mandatory. Some projects deliberately avoid it:
 
-- **istmo** bans serde by design and uses `bincode` 2's own `Encode`/`Decode` derives, to keep the dependency tree and compile times small and the wire format explicit.
+- Example (istmo): it bans serde by design and uses `bincode` 2's own `Encode`/`Decode` derives, to keep the dependency tree and compile times small and the wire format explicit. (A design choice that predates the bincode advisory below; new projects should pick a maintained format.)
 - Any project with a "no serde" rule in its `AGENTS.md`/`CLAUDE.md` wins over this file.
 
 Check the project's decision log before adding `serde` to a crate that does not already have it.
@@ -99,7 +99,7 @@ Anything persisted (files, databases, caches) or sent between processes of diffe
   ```
 
   The in-memory `State` stays clean; migrations are `From` chains, each tested.
-- **Binary formats** (bincode, postcard) are positional. Reordering, inserting or removing a field breaks every existing file. Version them with a leading magic + version header, and never change a released layout in place.
+- **Binary formats** (postcard, bitcode, bincode) are positional. Reordering, inserting or removing a field breaks every existing file. Version them with a leading magic + version header, and never change a released layout in place.
 - Keep **golden files** of each released format version in `tests/fixtures/` and test that the current code still reads them. Snapshot tests (`insta`) work well for serialized output.
 
 ## Choosing a format
@@ -108,7 +108,9 @@ Anything persisted (files, databases, caches) or sent between processes of diffe
 |---|---|
 | JSON (`serde_json`) | APIs, interop, debugging, `--json` CLI output |
 | TOML (`toml`) | human-edited config files |
-| `bincode` 2 | fast Rust-to-Rust binary IPC and storage. It has its own `Encode`/`Decode` derives, so serde is optional (the `serde` feature exists if you need it) |
+| `bitcode` | fast, compact Rust-to-Rust binary IPC and storage (serde or its own derives) |
+| `rkyv` | zero-copy deserialization for large read-mostly data (mmap, caches) |
+| ~~`bincode`~~ | **unmaintained** ([RUSTSEC-2025-0141](https://rustsec.org/advisories/RUSTSEC-2025-0141), 2025-12-16; 3.0.0 is a tombstone release). `cargo deny` flags it; existing users can stay on a pinned 1.3.3/2.x knowingly, new code picks postcard, bitcode, rkyv or wincode |
 | `postcard` | compact binary for embedded/`no_std` and constrained links; stable, documented wire format |
 | MessagePack (`rmp-serde`), CBOR (`ciborium`) | binary interop with non-Rust peers |
 | `prost` / Protobuf, Cap'n Proto | cross-language schemas with enforced evolution rules |
@@ -141,7 +143,7 @@ let rec: Record<'_> = serde_json::from_str(&input)?;
 Deserializing attacker-controlled data is a security boundary (see `references/security.md`):
 
 - Limit input size *before* parsing (`Read::take`, body size limits).
-- Bound collection sizes and recursion depth. With bincode 2, use a configuration with a byte limit.
+- Bound collection sizes and recursion depth; positional binary decoders trust length prefixes, so cap the input buffer and validate counts before allocating.
 - Validate after deserializing: convert the DTO into domain types via `TryFrom`, which enforces invariants.
 - Fuzz parsers for custom formats (`cargo fuzz`).
 

@@ -49,7 +49,7 @@ disallowed-methods = [
 ```rust
 std::thread::scope(|scope| {
     for chunk in data.chunks(1024) {
-        scope.spawn(|| process(chunk));
+        scope.spawn(move || process(chunk)); // `move` copies the &[T] in; `data` outlives the scope
     }
 }); // all threads joined here
 ```

@@ -87,7 +87,7 @@ Since Rust 1.80, rustc checks `cfg` names (`unexpected_cfgs` lint). Custom cfgs 
   unexpected_cfgs = { level = "warn", check-cfg = ["cfg(docsrs)"] }
   ```
 
-Since Rust 1.95, `cfg_select!` offers match-like selection inside expressions, which is useful for small per-platform values without a module split.
+`cfg_select!` (requires rust-version ≥ 1.95) offers match-like selection inside expressions, which is useful for small per-platform values without a module split.
 
 ## Features and platforms
 

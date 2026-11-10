@@ -125,7 +125,8 @@ Run `cargo semver-checks` before every release of a published library (in CI via
 compile_error!("features `backend-a` and `backend-b` are mutually exclusive; enable only one");
 ```
 
-- Verify every feature compiles in isolation: `cargo hack check --each-feature --no-dev-deps` (or `--feature-powerset` for small feature sets) in CI.
+  Such a crate can no longer build with `--all-features`, so every gate (clippy, test, doc, docs.rs `all-features = true`, cargo-deny `[graph] all-features`) must switch to explicit feature sets (`--features backend-a,extra`) and `cargo hack --each-feature`. Another reason to avoid exclusive features.
+- Verify every feature compiles in isolation: `cargo hack check --each-feature --no-dev-deps --locked` (or `--feature-powerset` for small feature sets) in CI.
 - Document each feature in the crate docs and in `Cargo.toml` comments.
 
 ## 7. Documentation
@@ -133,7 +134,12 @@ compile_error!("features `backend-a` and `backend-b` are mutually exclusive; ena
 - `#![warn(missing_docs)]` (or `missing_docs = "warn"` in `[lints.rust]`) for libraries.
 - Every public item: one-line summary, then details, then `# Errors`, `# Panics`, `# Safety` (for `unsafe fn`), `# Examples`.
 - Examples are doc tests — they run in CI (`cargo test --doc`). Use `?` in examples with a hidden `# fn main() -> Result<(), Box<dyn std::error::Error>> {` wrapper instead of `unwrap()`.
-- Intra-doc links (`[`Client::connect`]`) and `rustdoc::broken_intra_doc_links = "deny"`.
+- Intra-doc links (`[`Client::connect`]`), enforced in the manifest:
+
+  ```toml
+  [lints.rustdoc]            # or [workspace.lints.rustdoc]
+  broken_intra_doc_links = "deny"
+  ```
 - docs.rs configuration:
 
 ```toml

@@ -2,14 +2,14 @@
 
 > Read when: the repo has (or should have) a `flake.nix`, building Rust with Nix (crane, naersk, `rustPlatform`), setting up a devShell, a binary cache, Nix-based CI, cross builds from Nix, or bundling with nix-bundle-app.
 
-Nix gives every developer, agent and CI runner the same toolchain and system libraries. All of the user's projects ship a `flake.nix`. Template: `../templates/flake.nix`.
+Nix gives every developer, agent and CI runner the same toolchain and system libraries. Projects such as sismo, istmo and ansync ship a `flake.nix` for exactly this reason. Template: `../templates/flake.nix`.
 
 ## Choose the toolchain source
 
 | Source | Use |
 |---|---|
-| `oxalica/rust-overlay` (most user repos) | `pkgs.rust-bin.stable.latest.minimal`, `rust-bin.fromRustupToolchainFile ./rust-toolchain.toml` — reads the same file rustup uses, so Nix and non-Nix users agree |
-| `nix-community/fenix` (sss, imekit) | similar; convenient for nightly components and rust-analyzer |
+| `oxalica/rust-overlay` (e.g. sismo, istmo) | `pkgs.rust-bin.stable.latest.minimal`, `rust-bin.fromRustupToolchainFile ./rust-toolchain.toml` — reads the same file rustup uses, so Nix and non-Nix users agree |
+| `nix-community/fenix` (e.g. sss, imekit) | similar; convenient for nightly components and rust-analyzer |
 | nixpkgs `rustc`/`cargo` | only when nixpkgs' version satisfies `rust-version` and you do not need extra targets |
 
 Prefer `fromRustupToolchainFile` so `rust-toolchain.toml` stays the single source of truth for version, components and targets.
@@ -81,12 +81,12 @@ devShells.default = craneLib.devShell {
 
 ## Binary cache
 
-- The user runs an attic cache (`cache.sergioribera.rs`). Declare it in the flake so users get prompted once:
+- If the project has a binary cache (attic, Cachix, …), declare it in the flake so users get prompted once. Replace the placeholders with your own cache — never copy another project's substituter:
 
   ```nix
   nixConfig = {
-    extra-substituters = [ "https://cache.sergioribera.rs/main" ];
-    extra-trusted-public-keys = [ "main:<public-key>" ];
+    extra-substituters = [ "https://<your-cache>/<cache-name>" ];
+    extra-trusted-public-keys = [ "<cache-name>:<public-key>" ];
   };
   ```
 

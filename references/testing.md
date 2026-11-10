@@ -30,7 +30,7 @@ mod tests {
 }
 ```
 
-On Rust 1.96+, prefer `assert_matches!(Port::try_from(0), Err(PortError::Zero));` — it prints the actual value on failure.
+When the crate's `rust-version` is ≥ 1.96 (`assert_matches!` requires it), prefer `assert_matches!(Port::try_from(0), Err(PortError::Zero));` — it prints the actual value on failure. Below that MSRV keep `assert!(matches!(..))`.
 
 ## 2. Writing good tests
 
@@ -76,7 +76,7 @@ fn inline_value() {
 
 ### Golden files without insta
 
-For generated code (codegen, bindings), compare against checked-in files and regenerate behind an env var — the pattern used in istmo:
+For generated code (codegen, bindings), compare against checked-in files and regenerate behind an env var (example: istmo's codegen tests):
 
 ```rust
 #[test]

@@ -18,16 +18,26 @@
   multiple_unsafe_ops_per_block = "warn"
   ```
 
-- A crate that genuinely needs `unsafe` (FFI, SIMD, a low-level primitive) **does not inherit** the `forbid`; it declares its own `[lints]` table, keeps every other workspace lint, and states the reason in a comment:
+- A crate that genuinely needs `unsafe` (FFI, SIMD, a low-level primitive) **does not inherit** the `forbid`. Inheritance is all or nothing: Cargo rejects a `[lints.rust]` table next to `[lints] workspace = true`, and a source-level `#[allow]` cannot override `forbid`. So the crate drops `workspace = true` and writes **complete** local tables — the whole workspace baseline copied, only the unsafe entry changed, with the reason in a comment:
 
   ```toml
   # FFI boundary to the Android/iOS hosts — the only crate allowed to use unsafe.
+  # Copy of [workspace.lints] with unsafe_code relaxed; keep in sync with the root.
   [lints.rust]
   unsafe_code = "allow"
   unsafe_op_in_unsafe_fn = "deny"
+  unreachable_pub = "warn"
+  missing_debug_implementations = "warn"
+
+  [lints.clippy]
+  pedantic = { level = "warn", priority = -1 }
+  undocumented_unsafe_blocks = "deny"
+  multiple_unsafe_ops_per_block = "warn"
+  # ...rest of the workspace clippy table
   ```
 
-  Note: a member that sets its own `[lints]` cannot also use `lints.workspace = true` — copy the workspace set and change only the unsafe entries (the user's istmo `notinplus` crate does exactly this).
+  Example: istmo's `notinplus` crate follows this recipe.
+- Alternative when the copy is a maintenance burden: set the workspace value to `unsafe_code = "deny"` instead of `forbid`; a reviewed module can then opt in with `#[expect(unsafe_code, reason = "FFI boundary, see SAFETY comments")]` while every other crate keeps inheriting.
 - Keep unsafe in **one crate or one module** with a safe public wrapper. Callers of the wrapper never write `unsafe`.
 - `forbid` cannot be overridden by inner `#[allow]`; `deny` can. Use `forbid` where unsafe must never appear, `deny` where a reviewed module may opt in.
 
@@ -72,13 +82,13 @@ Format:
   }
   ```
 
-- `static mut` references are a hard error in 2024 — use `SyncUnsafeCell`-style wrappers, atomics, `OnceLock`/`LazyLock`, or raw pointers via `&raw const`/`&raw mut`.
+- Taking references to a `static mut` triggers `static_mut_refs`, a **deny-by-default lint** in edition 2024 (not a hard error — but do not `allow` it). Prefer a plain `static` with interior mutability (atomics, `Mutex`, `OnceLock`/`LazyLock`), or access through raw pointers with `&raw const`/`&raw mut`. (`SyncUnsafeCell` is still unstable.)
 
 ## Design the boundary narrow
 
 The cheapest FFI to keep sound is the smallest one.
 
-- **One frame protocol, not N trampolines.** The user's istmo pattern: Rust and the host (Kotlin/Swift) exchange a single `dispatch(frame: &[u8]) -> Vec<u8>`-style call carrying a typed, versioned, serialized message (bincode). Adding a feature adds a message variant, not a new `extern` function, new JNI signatures and new unsafe code.
+- **One frame protocol, not N trampolines.** Example (istmo): Rust and the host (Kotlin/Swift) exchange a single `dispatch(frame: &[u8]) -> Vec<u8>`-style call carrying a typed, versioned, serialized message (istmo uses bincode 2, now flagged unmaintained — RUSTSEC-2025-0141; postcard or bitcode are maintained alternatives). Adding a feature adds a message variant, not a new `extern` function, new JNI signatures and new unsafe code.
 - Pass **plain data across the boundary**: `#[repr(C)]` structs, pointer + length pairs, integer handles (`NativeHandleId(u64)` newtype) instead of raw pointers to Rust objects.
 - Ownership is explicit: whoever allocates frees. Export a matching `free` for every buffer handed out; never let C call Rust's allocator implicitly.
 - **Never unwind across `extern "C"`.** Panics crossing FFI abort (since 1.81 for `extern "C"`); catch at the boundary with `std::panic::catch_unwind` and turn the panic into an error code if the host must survive. Use `extern "C-unwind"` only when unwinding through foreign frames is intended.
@@ -95,7 +105,7 @@ The cheapest FFI to keep sound is the smallest one.
 | Rust↔Rust dynamic plugins | `stabby` + `libloading` | Rust has no stable ABI: use `stabby` types/traits (`#[stabby::stabby]`) for anything crossing the dylib boundary and version the plugin interface. `libloading::Library` must outlive every symbol taken from it. |
 | Detect UB | Miri | See below. |
 
-For plugin registries the user prefers an explicit registry macro (`istmo::runtime!`, `plugin_registry!`) over link-time magic like `inventory`/`linkme` — registration is visible and greppable.
+For plugin registries prefer an explicit registry macro (`istmo::runtime!`, `plugin_registry!`) over link-time magic like `inventory`/`linkme` — registration is visible and greppable.
 
 ## Miri
 
@@ -109,7 +119,7 @@ MIRIFLAGS="-Zmiri-strict-provenance" cargo +nightly miri test -p <unsafe-crate>
 
 - Run it on every crate containing `unsafe`, at least in a scheduled CI job.
 - Miri cannot execute real FFI calls; isolate FFI behind a trait and test the unsafe Rust logic with a fake backend.
-- **CI caution (2026):** a cached `target/` from Miri jobs leaked CI secrets. Do not cache Miri jobs, keep secrets out of the Miri job's environment, and use a nightly dated 2026-09-22 or later. (Exact advisory URL unverified; follow the Rust blog.) See `ci-hardening.md`.
+- **CI caution:** never cache Miri jobs (or any job that runs untrusted code) in a cache that jobs holding secrets restore, and keep secrets out of the Miri job environment. A 2026 incident reportedly leaked CI secrets through a cached `target/`; the principle holds regardless of the details. See `ci-hardening.md`.
 - Complements: `cargo careful` (extra runtime checks on stable-ish code), sanitizers (`-Zsanitizer=address|thread` on nightly), and `loom` for lock-free code (see `concurrency.md`).
 
 ## Anti-patterns

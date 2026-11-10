@@ -24,8 +24,9 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-# Edition 2024 needs >= 1.85. Bump deliberately; CI has an MSRV job that checks this value.
-rust-version = "1.85"
+# Edition 2024 needs >= 1.85; 1.88 adds let chains, which the skill recommends.
+# Bump deliberately; the CI MSRV job builds with exactly this toolchain.
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/OWNER/myproj"
 
@@ -45,7 +46,11 @@ tokio = { version = "1.54", default-features = false, features = ["rt-multi-thre
 serde = { version = "1.0", features = ["derive"] }
 
 [workspace.lints.rust]
-unsafe_code = "forbid"           # FFI crates override with `[lints.rust] unsafe_code = "allow"` + justification.
+# FFI/SIMD crates cannot override `forbid` from source, and a member with
+# `[lints] workspace = true` cannot add its own `[lints.rust]`. Such a crate drops
+# `workspace = true` and carries a complete local `[lints]` table (copy of this one)
+# with `unsafe_code = "deny"` or `"allow"` + justification: references/unsafe-ffi.md.
+unsafe_code = "forbid"
 unsafe_op_in_unsafe_fn = "deny"  # Each unsafe op inside an `unsafe fn` needs its own block + SAFETY comment.
 unreachable_pub = "warn"         # `pub` items not reachable from the crate root should be `pub(crate)`.
 missing_debug_implementations = "warn"
@@ -64,14 +69,17 @@ dbg_macro = "deny"
 todo = "warn"
 unimplemented = "warn"
 undocumented_unsafe_blocks = "deny"        # Every `unsafe {}` needs a `// SAFETY:` comment.
-allow_attributes_without_reason = "deny"   # Forces `#[expect(lint, reason = "...")]`.
-# allow_attributes = "warn"                # Stricter: ban `#[allow]` entirely in favour of `#[expect]`.
+multiple_unsafe_ops_per_block = "warn"     # One unsafe op per block keeps each SAFETY comment precise.
+allow_attributes_without_reason = "deny"   # Every `#[allow]` must carry `reason = "..."`. It does not force `#[expect]`.
+# Policy: `#[expect(lint, reason = "...")]` by default; `#[allow(lint, reason = "...")]` only
+# when the lint fires conditionally (cfg/target/feature/macro), where `expect` would be unfulfilled.
+# allow_attributes = "warn"                # Stricter: flag every `#[allow]`, pushing to `#[expect]`.
 # Library-only (uncomment for published crates or crates that must not print):
 # print_stdout = "deny"
 # print_stderr = "deny"
 
 # Pedantic lints commonly allowed. Each allow needs a reason; delete lines you do not need.
-module_name_repetitions = "allow"   # Conflicts with `foo::FooError`-style naming.
+# (`module_name_repetitions` moved to `restriction` in clippy 1.84: no allow needed under pedantic.)
 # missing_errors_doc = "allow"      # Binaries/internal crates only; libraries keep `# Errors` docs.
 # missing_panics_doc = "allow"      # Same as above.
 # cast_possible_truncation = "allow" # Numeric/graphics code where casts are reviewed by hand.
@@ -89,7 +97,7 @@ lto = "thin"                        # Most of fat LTO's gain at a fraction of li
 codegen-units = 1                   # Better optimisation; slower build.
 strip = true
 # panic = "abort"                   # Apps only: smaller binary, no unwinding. Never for libraries or if you rely on catch_unwind.
-# debug = "line-tables-only"        # Readable backtraces from release builds at small size cost.
+# debug = "line-tables-only"        # Readable backtraces at small size cost; requires `strip = "none"` (strip = true drops the line tables).
 # overflow-checks = true            # Keep integer overflow checks in release where correctness beats speed.
 
 # Optional: fast CI profile that still catches release-only bugs.

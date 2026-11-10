@@ -92,7 +92,7 @@ fn init_tracing() {
 
 `tracing` is the default. Use the `log` facade when:
 
-- the target ecosystem expects it (e.g. Android, via `android_logger`, where a project like istmo/notinplus already standardized on `log`/`env_logger`);
+- the target ecosystem expects it (e.g. Android via `android_logger`, or a project that already standardized on `log`/`env_logger`);
 - you write a small library whose users predominantly use `log`.
 
 The two interoperate. `tracing` events reach `log` consumers via the `log` feature of `tracing`, and `log` records reach a tracing subscriber via `tracing-log` (enabled by default in `tracing-subscriber`'s `tracing-log` feature). Pick one per project and stay consistent.

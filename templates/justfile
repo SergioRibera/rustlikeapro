@@ -1,7 +1,11 @@
 # justfile template (rustlikeapro). Recipes mirror CI so local == CI.
 # `just --list` shows everything.
+#
+# Projects with mutually exclusive features override the feature selection:
+#   just features="--features backend-a" ci
 
 msrv := `grep -m1 '^rust-version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/'`
+features := "--all-features"
 
 default:
     @just --list
@@ -13,29 +17,34 @@ fmt:
 # Lints exactly as CI runs them.
 lint:
     cargo fmt --all --check
-    cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+    cargo clippy --workspace --all-targets {{features}} --locked -- -D warnings
 
 # Unit + integration tests (nextest if installed) and doc tests (nextest does not run them).
 test:
-    if command -v cargo-nextest >/dev/null; then cargo nextest run --workspace --all-features --locked; else cargo test --workspace --all-features --locked; fi
-    cargo test --workspace --doc --all-features --locked
+    if command -v cargo-nextest >/dev/null; then cargo nextest run --workspace {{features}} --locked; else cargo test --workspace {{features}} --locked; fi
+    cargo test --workspace --doc {{features}} --locked
 
-# Build docs, failing on broken links and warnings.
+# Build docs (private items included), failing on broken links and warnings.
 doc:
-    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps {{features}} --document-private-items --locked
 
 # Licenses, advisories, duplicate versions and sources.
 deny:
     cargo deny check
 
-# Full local gate (prints PASS/FAIL/SKIP per step).
-check:
-    ./scripts/check.sh
+# Spelling in code, docs and comments.
+typos:
+    typos
 
-# Everything CI runs, including feature combinations.
-ci: lint test doc deny
-    cargo hack check --workspace --each-feature --no-dev-deps
+# Local definition-of-done gate: lint, tests, docs, plus deny/typos when configured/installed.
+check: lint test doc
+    if [ -f deny.toml ] && command -v cargo-deny >/dev/null; then cargo deny check; else echo "SKIP cargo deny (no deny.toml or cargo-deny not installed)"; fi
+    if command -v typos >/dev/null; then typos; else echo "SKIP typos (not installed)"; fi
 
-# Check the declared minimum supported Rust version.
+# Check the declared minimum supported Rust version (`+toolchain` beats rust-toolchain.toml).
 msrv:
-    rustup run {{msrv}} cargo check --workspace --all-targets --locked
+    cargo +{{msrv}} check --workspace --all-targets --locked
+
+# Everything CI runs, including feature combinations and the MSRV.
+ci: lint test doc deny typos msrv
+    cargo hack check --workspace --each-feature --no-dev-deps --locked

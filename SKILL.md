@@ -2,7 +2,7 @@
 name: rustlikeapro
 description: Engineering standards, decision rules, templates and CI/CD for production-grade Rust. Use BEFORE writing, modifying, reviewing or scaffolding any Rust code — whenever the task touches a .rs file, Cargo.toml, a crate or workspace, clippy/rustfmt/lints, cargo-deny, MSRV, tests or benchmarks, unsafe/FFI, async (tokio), releases or publishing crates, CI for Rust, Nix builds of Rust, cross-compilation or multiplatform (Android/iOS/desktop/wasm) Rust apps — even if "best practices" is never mentioned. Also applies to Rust snippets inside larger tasks. Not needed for merely explaining existing Rust code.
 license: MIT
-compatibility: Requires a Rust toolchain (rustup/cargo). Scripts need bash; optional tools (cargo-deny, cargo-nextest, typos, cargo-hack) are detected and reported when missing.
+compatibility: Requires a Rust toolchain (rustup/cargo). Scripts need bash >= 4 and GNU coreutils/sed (macOS: install bash and gnu-sed via Homebrew); optional tools (cargo-deny, cargo-nextest, typos, cargo-hack) are detected and reported when missing.
 metadata:
   version: "1.0.0"
   verified-against: "rust 1.99, clippy 1.99, cargo-deny 0.20, edition 2024 (2026-11)"
@@ -29,13 +29,14 @@ This file holds the hard rules and the decision tables. Depth lives in `referenc
 
 ## 1. Project conventions (non-negotiable defaults)
 
-- **Edition**: respect `Cargo.toml`. New projects: edition 2024, `resolver = "3"`, explicit `rust-version` (≥ 1.85 for 2024), `rust-toolchain.toml` with `profile = "minimal"` + `rustfmt`, `clippy`.
+- **Edition**: respect `Cargo.toml`. New projects: edition 2024, `resolver = "3"`, explicit `rust-version` (default 1.88: edition 2024 needs ≥ 1.85, let chains need ≥ 1.88), `rust-toolchain.toml` with `profile = "minimal"` + `rustfmt`, `clippy`. **Before using a std/language feature, check it is stable at the declared `rust-version`** (e.g. `cfg_select!` 1.95, `assert_matches!` 1.96); clippy's MSRV-aware lints read `rust-version` too.
+- **`Cargo.lock` is committed in every project**, libraries included; CI builds with `--locked`.
 - **Lints live in the manifest, not on the command line.** `[workspace.lints]` + `[lints] workspace = true` in every member, so editors, CI and every agent share one config. Baseline in `templates/Cargo.workspace.toml`:
   - `clippy::pedantic` at warn, `priority = -1`; nursery is opt-in per project.
   - `unsafe_code = "forbid"` at workspace level; FFI crates override locally with justification.
   - Cherry-picked restriction lints: `unwrap_used`, `dbg_macro`, `todo`, `print_stdout`/`print_stderr` (libs), `undocumented_unsafe_blocks`, `allow_attributes_without_reason`.
-  - Gate: `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`. `-W clippy::pedantic` on the CLI only warns and enforces nothing.
-- **Suppressing a lint**: `#[expect(clippy::lint, reason = "…")]`, never bare `#[allow]`. `expect` fails when the lint stops firing, so stale suppressions die. Allow at the narrowest scope; crate-wide allows go in the manifest with a comment.
+  - Gate: `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`. Lint flags passed only on the command line (`-W clippy::pedantic`) are invisible to editors, rust-analyzer, `cargo check` and other agents — the manifest is the single source of truth.
+- **Suppressing a lint**: `#[expect(lint, reason = "…")]` by default — it fails when the lint stops firing, so stale suppressions die. `#[allow(lint, reason = "…")]` only when the lint fires conditionally (per cfg/target/feature, or inside macro expansions), where `expect` would be unfulfilled. A **bare `#[allow]`** — one without `reason` — is never acceptable (`allow_attributes_without_reason = "deny"`). Suppress at the narrowest scope; crate-wide allows go in the manifest with a comment.
 - **Policy as config**: project bans (`std::thread::spawn` without a name, `println!` in libs, a footgun API) go in `clippy.toml` `disallowed-methods`/`disallowed-types` with a `reason`, so tooling enforces what prose only asks for.
 - **Dependencies are added with `cargo add`, never with a version typed from memory.** Requirement is `major.minor` (`thiserror = "2.0"`, `rand = "0.9"`; full version only for `0.0.x`): the minor floor documents the API level, caret semantics let `cargo update` pull patches, `Cargo.lock` pins the exact build. Workspaces declare the version once in `[workspace.dependencies]`; members use `workspace = true`. `scripts/add-dep.sh <crate> [-p member] [--features …]` does all of this and warns when the latest release exceeds the project's MSRV. Policy: `references/maintenance.md`.
 - **Formatting**: `cargo fmt`. Never hand-format against rustfmt.
@@ -73,14 +74,14 @@ A panic means **a bug**, never an expected failure.
 - `unwrap()` is denied outside tests (`clippy::unwrap_used` + `allow-unwrap-in-tests = true` in `clippy.toml`).
 - `expect()` is allowed only when the message states the invariant that makes failure impossible: `.expect("invariant: regex literal is valid")`. Prefer restructuring so the type system proves it (split the type, `NonZero*`, exhaustive match, `let … else`).
 - Functions that can panic document `# Panics`.
-- Hidden panics count too: slice indexing (`v[i]` → `get`), `RefCell::borrow_mut`, integer overflow (`checked_*`/`saturating_*` where input is untrusted), `Duration`/`Instant` subtraction.
+- Hidden panics count too: slice indexing (`v[i]` → `get`), `RefCell::borrow_mut`, integer overflow (`checked_*`/`saturating_*` where input is untrusted), `Duration - Duration` and `Instant ± Duration` (use `checked_sub`/`checked_add`; `Instant - Instant` saturates).
 - Tests, build scripts and examples may `unwrap` — a panic is the right response there.
 
 ## 4. Style and idioms
 
 - **Iterators over index loops** (`iter().enumerate()`, `zip`, `filter_map`, `fold`): no off-by-one, fewer bounds checks. Explicit loops only when genuinely clearer (complex early exit, in-place mutation).
 - **Exhaustive matching**: no `_ =>` on enums you own — a new variant must break every match site at compile time. Exception: foreign `#[non_exhaustive]` enums require a wildcard; make it explicit (log/return an error), never silently ignore.
-- Use modern control flow: `let … else` for early returns, let chains (edition 2024) instead of nested `if let`.
+- Use modern control flow: `let … else` for early returns, let chains (edition 2024, rust-version ≥ 1.88) instead of nested `if let`.
 - **Unused parameters**: never `let _ = param;`. Prefix (`_ctx`) when a trait signature requires it; otherwise remove the parameter. No `#[allow(unused_*)]` / `dead_code` to hide leftovers — delete them.
 - `#[must_use]` on constructors, pure functions and builders where ignoring the result is a bug.
 - **Constructors** — priority: `#[derive(Default)]` > manual `Default` > `From`/`TryFrom` > builder (`T::default().with_x(..)`) > `fn new(..)`.
@@ -98,7 +99,7 @@ A panic means **a bug**, never an expected failure.
 - **Don't create files reflexively.** New files are for new concepts; first check whether extending an existing type serves the need. A UI component, backend or domain concept with its own state *is* a new concept.
 - **Module layout: `foo.rs` + `foo/`, never `foo/mod.rs`** (except tiny projects or `#[path]` platform tricks). The root file sits beside its directory and holds the module's base abstractions, base structs and re-exports; submodules stay encapsulated behind it. The module tree should read as a description of the system.
 - **Workspaces**: `crates/<proj>-core` (shared types), `crates/<proj>-<domain>`, `bins/` or `tools/` when useful. All versions in `[workspace.dependencies]`, members use `dep.workspace = true`. Duplicated type definitions across crates are a smell — they drift. Details: `references/workspace.md`.
-- **Backends behind traits + features**: one trait per swappable backend (`Transport`, `AudioBackend`), implementations behind additive cargo features. Mutually exclusive features fail with `compile_error!` and a fix-it message.
+- **Backends behind traits + features**: one trait per swappable backend (`Transport`, `AudioBackend`), implementations behind additive cargo features. Mutually exclusive features fail with `compile_error!` and a fix-it message — and then cannot use `--all-features` in gates (see §12).
 - **Generics vs `dyn`**:
 
 | Use generics (default) | Use `dyn Trait` |
@@ -113,7 +114,7 @@ Deep dives: `references/async.md`, `references/concurrency.md`.
 
 - `tokio` is the default runtime for applications. **Libraries should be executor-agnostic** when feasible (channels such as `flume`, no runtime spawn inside the lib), or gate runtime integration behind a feature.
 - List tokio features explicitly (`default-features = false, features = [...]`); never `features = ["full"]` in a library.
-- Never block inside async: blocking I/O, `reqwest::blocking`, heavy CPU → async API or `spawn_blocking`. Calling `block_on`/creating a runtime inside a runtime **panics**.
+- Never block inside async: blocking I/O, `reqwest::blocking`, heavy CPU → async API or `spawn_blocking`. Calling `Runtime::block_on` (or `Handle::block_on`, `reqwest::blocking`) from inside a runtime, or dropping a runtime in async context, **panics**.
 - **Locks**: `std::sync::Mutex` (or `parking_lot`) is the default for short critical sections that do not cross `.await`. Use `tokio::sync::Mutex` only when the guard must be held across `.await`. A std guard across `.await` makes the future `!Send` / risks deadlock — `clippy::await_holding_lock` catches it.
 - Concurrency over tasks: `tokio::task::JoinSet` before pulling in `futures::join_all`; add `futures` only for real combinator needs (`StreamExt`, `buffer_unordered`).
 - Every `tokio::select!` branch must be **cancellation-safe**; document when it is not.
@@ -160,13 +161,15 @@ Mention one only when its trigger matches; explain why in one line and let the u
 
 ## 12. Definition of done
 
-Run `scripts/check.sh` (mirrors CI; prints every skipped step). Equivalent manual gate:
+Run `scripts/check.sh` (the local gate; prints every skipped step). The feature-powerset (`cargo hack`) and the MSRV build run in CI; `check.sh --msrv` runs the latter locally when that toolchain is installed. Equivalent manual gate:
 
 1. `cargo fmt --all --check`
 2. `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
-3. `cargo nextest run --workspace --all-features --locked` (or `cargo test`) **and** `cargo test --doc --workspace`
+3. `cargo nextest run --workspace --all-features --locked` (or `cargo test`) **and** `cargo test --doc --workspace --all-features` (nextest skips doc tests)
 4. `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features` (libraries)
 5. `cargo deny check` when `deny.toml` exists
+
+Projects with mutually exclusive features (`compile_error!` guards) cannot use `--all-features`: pass an explicit set everywhere (`check.sh --features a,b`, CI `--features …`) and cover the rest with `cargo hack --each-feature`.
 6. Re-read the diff: every error typed and contextual? any `unwrap` or uncommented `expect`? any bare `#[allow]`? any file or dependency that did not need to exist? any comment that says nothing? any decision that belongs in the decision log?
 
 **Never claim a step passed without running it.** If a step could not run (missing tool, no network, platform), say so explicitly in the final report.

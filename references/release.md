@@ -13,7 +13,7 @@
   ```
 
   In CI: `obi1kenobi/cargo-semver-checks-action@v2` on PRs for published crates.
-- Workspaces either share one version (`shared-version = true`, the user's choice for sismo/istmo) or version crates independently (release-plz default). Shared is simpler for tightly coupled crates.
+- Workspaces either share one version (`shared-version = true`; example: sismo, istmo) or version crates independently (release-plz default). Shared is simpler for tightly coupled crates.
 
 ## Commits and changelog
 
@@ -31,18 +31,18 @@
   ```
   ````
 
-- The user's sismo `cliff.toml` lists only `feat`/`fix`/`perf` in release notes and skips the rest — users read notes, contributors read history.
+- Example: sismo's `cliff.toml` lists only `feat`/`fix`/`perf` in release notes and skips the rest — users read notes, contributors read history.
 
 ## Tooling options
 
 | Tool | Model | Fits |
 |---|---|---|
-| **cargo-release + git-cliff** (user's default) | Local `cargo release <level>` bumps versions (workspace shared), rewrites intra-workspace deps, commits `chore(release): X`, tags `vX`; the tag triggers the release workflow; git-cliff writes notes | Apps and workspaces you release by hand; publishing kept manual or in the tag workflow |
+| **cargo-release + git-cliff** (examples: sismo, simplemoji) | Local `cargo release <level>` bumps versions (workspace shared), rewrites intra-workspace deps, commits `chore(release): X`, tags `vX`; the tag triggers the release workflow; git-cliff writes notes | Apps and workspaces you release by hand; publishing kept manual or in the tag workflow |
 | **release-plz** (0.4.3, action `release-plz/action@v0.5`) | Bot opens a release PR with bumps + changelog (git-cliff based); merging publishes to crates.io and tags | Published libraries with frequent releases (youtui) |
 | **letmerelease** | Manual `workflow_dispatch`, dry run, then publishes crates in dependency order, tags, `gh release create --generate-notes` | Large multi-crate workspaces (freya) |
 | **cargo publish --workspace** (Cargo 1.90+) | Publishes all members in dependency order in one command | Simple workspaces, scripted releases |
 
-The user's `release.toml` (sismo) for reference:
+Example `release.toml` (sismo) for reference:
 
 ```toml
 publish = false              # crates.io publishing stays manual, in dependency order
@@ -92,15 +92,15 @@ jobs:
 Pick by build system:
 
 - **Nix projects → nix-bundle-app** (suggest, don't impose; see `ecosystem.md`). From the Nix derivation it produces deb, rpm, Arch/AUR, AppImage, Flatpak/Snap source layouts, brew, tarballs/zip, macOS app/dmg/pkg, Windows NSIS/MSI, plus `bundler.release { info; matrix; releaseUrl; installScripts = true; }` for a flat upload directory with `install.sh`/`install.ps1` and `SHA256SUMS`. Signing runs afterwards via `./result/sign.sh`. sismo's flake uses it for native + Windows bundles.
-- **Non-Nix projects → dist (cargo-dist 0.34)**: config in `dist-workspace.toml` / `[workspace.metadata.dist]`, generates its own release workflow, installers (shell, PowerShell, MSI, Homebrew) and checksums. Used in the user's simplemoji and worship-screens. Config details from memory — run `dist init` and read what it writes.
+- **Non-Nix projects → dist (cargo-dist 0.34)**: config in `dist-workspace.toml` / `[workspace.metadata.dist]`, generates its own release workflow, installers (shell, PowerShell, MSI, Homebrew) and checksums. Examples: simplemoji, worship-screens. Config details from memory — run `dist init` and read what it writes.
 - **cargo-packager / tauri-bundler**: GUI app bundles without Nix.
-- **AUR**: the user's sss/simplemoji publish PKGBUILDs from CI on release.
+- **AUR**: publish PKGBUILDs from CI on release (examples: sss, simplemoji).
 - **Mobile**: Play Store / App Store workflows come from the istmo template (`ecosystem.md`).
 
 ## Publishing crates
 
 - `cargo publish --dry-run -p <crate>` (or `--workspace`) in CI before the real publish.
-- Crates with `[patch]` or path-only deps cannot be published — every intra-workspace dep needs `version`.
+- Path-only deps cannot be published — every intra-workspace dep needs `version`. `[patch]` does not block publishing, but it is root-only and **not applied for downstream users**: a crate that only builds with the patch is broken for everyone else, so wait for the upstream release.
 - Fill `description`, `license`, `repository`, `readme`, `keywords`, `categories`, `rust-version`; `[package.metadata.docs.rs]` for features/targets (`api-design.md`).
 - Exclude junk: `exclude = ["demo-traces/", "assets/raw/"]` or `include` whitelist; check with `cargo package --list`.
 - Yanking is for broken releases, not for undoing a publish of secrets — rotate secrets instead.
@@ -112,7 +112,7 @@ Pick by build system:
 - [ ] CHANGELOG `Unreleased` → version + date; breaking changes have diff blocks.
 - [ ] MSRV change called out explicitly.
 - [ ] `cargo publish --dry-run` / `cargo package --list` clean.
-- [ ] Tag `vX.Y.Z` (or `<crate>/vX.Y.Z` for independent versions) created by tooling, not by hand-edited files.
+- [ ] Tag `vX.Y.Z` (or `<crate>-vX.Y.Z` for independent versions — `{{ package }}-v{{ version }}` in `../templates/release-plz.toml`) created by tooling, not by hand-edited files.
 - [ ] Artifacts built with `--locked`, checksums attached, notes generated.
 - [ ] Post-release: perf baseline recorded (sismo) for the next regression comparison, if the app is instrumented.
 

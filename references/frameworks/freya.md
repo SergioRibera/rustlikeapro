@@ -64,6 +64,13 @@ const BTN_OVER_BYTES: &[u8] =
 const BTN_PRESSED_BYTES: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/images/btn_pressed.png"));
 
+impl ImageButton {
+    // `new` is justified here (SKILL.md §4: constructors that enforce invariants):
+    // the label is the one required argument, and `Default` would yield a
+    // label-less button. A `From<&str>` would read as a conversion, not a constructor.
+    pub(crate) fn new(label: impl Into<Cow<'static, str>>) -> Self { /* … */ }
+}
+
 // ✓ caller
 ImageButton::new("LOGIN").position(Position::new_absolute().top(20.).left(40.))
 
