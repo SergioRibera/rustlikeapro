@@ -1,4 +1,4 @@
-# deny.toml template (rustlikeapro) for cargo-deny 0.20+.
+# deny.toml template (rustlikeapro) for cargo-deny 0.21+.
 # Since 0.16 the old fields (vulnerability, unlicensed, copyleft, deny, default, ...) are hard
 # errors: advisories are denied by default and only `ignore` creates exceptions; licenses are
 # decided only by `allow` + `exceptions`.
