@@ -4,8 +4,8 @@ description: Engineering standards, decision rules, templates and CI/CD for prod
 license: MIT
 compatibility: Requires a Rust toolchain (rustup/cargo). Scripts need bash >= 4 and GNU coreutils/sed (macOS: install bash and gnu-sed via Homebrew); optional tools (cargo-deny, cargo-nextest, typos, cargo-hack) are detected and reported when missing.
 metadata:
-  version: "1.0.1"
-  verified-against: "rust 1.100, clippy 1.100, cargo-deny 0.20, edition 2024 (2026-11)"
+  version: "1.0.2"
+  verified-against: "rust 1.100, clippy 1.100, cargo-deny 0.22, edition 2024 (2026-11)"
 ---
 
 # rustlikeapro
